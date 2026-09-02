@@ -1,5 +1,8 @@
-data/*.geojson
-data/slice*.json
-data/histogram.json
 node_modules/
+/dist/
+data/*
+!data/.gitkeep
+coverage/
+*.tsbuildinfo
+.DS_Store
 .claude/worktrees/

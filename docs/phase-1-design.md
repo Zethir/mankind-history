@@ -73,7 +73,7 @@ package.json            workspace root: scripts, devDeps (biome, vitest, typescr
 pnpm-workspace.yaml
 .nvmrc                   22
 biome.json              one config, checked in, no per-editor overrides
-tsconfig.base.json      strict: true, ESM, Node 22 lib, composite project refs
+tsconfig.base.json      strict: true, ESM, Node 22 lib, noEmit (tsx runs sources directly)
 vitest.config.ts        workspace-level
 .editorconfig
 LICENSE                 MIT

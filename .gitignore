@@ -2,3 +2,4 @@ data/*.geojson
 data/slice*.json
 data/histogram.json
 node_modules/
+.claude/worktrees/

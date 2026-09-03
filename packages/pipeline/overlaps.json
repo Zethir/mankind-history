@@ -1,0 +1,4 @@
+{
+  "$comment": "Versions of one polity whose intervals overlap. The build fails on any overlap not listed here. Every entry needs a reason explaining why the overlap is real rather than a data error.",
+  "overlaps": []
+}

@@ -36,7 +36,7 @@ describe("canonical types", () => {
   it("pins the constants the artifact contract depends on", () => {
     expect(SCHEMA_VERSION).toBe(1);
     expect(PROJECTION).toBe("equal-earth");
-    expect(COORD_SCALE.full).toBe(1e8);
+    expect(COORD_SCALE.full).toBe(1e9);
     expect(COORD_SCALE.mid).toBe(1e6);
     expect(COORD_SCALE.coarse).toBe(1e5);
     expect(MAX_SEGMENT_X).toBe(2.7);

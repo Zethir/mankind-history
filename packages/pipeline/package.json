@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@history/model": "workspace:*"
+    "@history/model": "workspace:*",
+    "adm-zip": "^0.6.0"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.8"
   }
 }

@@ -12,8 +12,9 @@ Seshat Global History Databank. CC-BY-4.0.
 CC-BY requires for attribution, and stays the citation regardless of which
 release is pinned.
 
-**Pinned as:** `v0.2.0`, fetched directly from the GitHub release tag:
-`https://raw.githubusercontent.com/Seshat-Global-History-Databank/cliopatria/v0.2.0/cliopatria.geojson.zip`,
+**Pinned as:** `v0.2.0`, fetched by the commit that tag names rather than by the
+tag itself, since a lightweight tag can be repointed and a commit cannot:
+`https://raw.githubusercontent.com/Seshat-Global-History-Databank/cliopatria/ad28a691b7c07c1fca89d0e0636d324667d2a258/cliopatria.geojson.zip`,
 verified by SHA-256 in `packages/pipeline/src/sources.ts`. The zip's single
 entry is `cliopatria_polities_only.geojson` - not `cliopatria.geojson`.
 

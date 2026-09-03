@@ -25,10 +25,11 @@ export const SOURCES: Record<string, SourceSpec> = {
     name: "Cliopatria (Seshat Global History Databank)",
     license: "CC-BY-4.0",
     upstreamVersion: "v0.2.0",
-    // v0.2.0 is a lightweight tag, which can be moved. It currently points at
-    // commit ad28a691b7c07c1fca89d0e0636d324667d2a258 -- recorded here so the
-    // exact bytes stay recoverable even if the tag is ever repointed.
-    url: "https://raw.githubusercontent.com/Seshat-Global-History-Databank/cliopatria/v0.2.0/cliopatria.geojson.zip",
+    // Fetched by commit, not by tag. `v0.2.0` is a lightweight tag and can be
+    // repointed; a commit cannot. Both addressed identical bytes when this was
+    // pinned, so this costs nothing today and means a future retag cannot break
+    // the fetch. upstreamVersion above stays the human-readable name.
+    url: "https://raw.githubusercontent.com/Seshat-Global-History-Databank/cliopatria/ad28a691b7c07c1fca89d0e0636d324667d2a258/cliopatria.geojson.zip",
     file: "cliopatria.geojson.zip",
     unpack: "cliopatria_polities_only.geojson",
     sha256: "d01ae3a20d358cc5d54f69d9d725d390767d9c8759ac89ad6f90c58d106f3370",

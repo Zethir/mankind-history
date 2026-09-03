@@ -1,0 +1,30 @@
+name: Full build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm fetch:sources
+      - run: pnpm build
+      - name: Report artifact sizes against the 8 MB budget
+        run: |
+          node -e "
+            const m = require('./dist/manifest.json');
+            for (const a of m.artifacts) {
+              console.log(a.file, a.bytes, 'bytes,', a.gzipBytes, 'gzipped');
+            }
+          "
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/

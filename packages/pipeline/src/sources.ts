@@ -24,11 +24,11 @@ export const SOURCES: Record<string, SourceSpec> = {
     dataset: "cliopatria",
     name: "Cliopatria (Seshat Global History Databank)",
     license: "CC-BY-4.0",
-    upstreamVersion: "UNPINNED",
-    url: "UNPINNED",
+    upstreamVersion: "v0.2.0",
+    url: "https://raw.githubusercontent.com/Seshat-Global-History-Databank/cliopatria/v0.2.0/cliopatria.geojson.zip",
     file: "cliopatria.geojson.zip",
-    unpack: "cliopatria.geojson",
-    sha256: null,
+    unpack: "cliopatria_polities_only.geojson",
+    sha256: "d01ae3a20d358cc5d54f69d9d725d390767d9c8759ac89ad6f90c58d106f3370",
   },
   naturalEarth110mLand: {
     dataset: "naturalEarth110mLand",
@@ -37,7 +37,7 @@ export const SOURCES: Record<string, SourceSpec> = {
     upstreamVersion: "5.1.1",
     url: "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.1/geojson/ne_110m_land.geojson",
     file: "ne_110m_land.geojson",
-    sha256: null,
+    sha256: "9e0729ee253ca7d7a5c4ae9395fb1902264c5377c52e224d13dd85010e2835d9",
   },
   naturalEarth50mLand: {
     dataset: "naturalEarth50mLand",
@@ -46,7 +46,7 @@ export const SOURCES: Record<string, SourceSpec> = {
     upstreamVersion: "5.1.1",
     url: "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.1/geojson/ne_50m_land.geojson",
     file: "ne_50m_land.geojson",
-    sha256: null,
+    sha256: "e874b27a51d146452be360cafb3cc50c86001074a67d534113e6534682f9826b",
   },
 };
 

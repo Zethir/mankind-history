@@ -149,6 +149,12 @@ describe("geometry", () => {
   it(
     "no polygon crosses the antimeridian in projected space",
     () => {
+      // Passes vacuously on this fixture: no ring in the pinned Cliopatria
+      // release wraps the antimeridian at all (max |lon| is exactly 180, and
+      // a full pnpm build cuts zero polygons), so cutPolygons is a no-op
+      // here. Real coverage of the cutting path is
+      // packages/pipeline/tests/antimeridian.test.ts, which builds synthetic
+      // wrapping rings by hand. See fixtures/README.md.
       const limit = MAX_SEGMENT_X * SCALE;
       for (const geometry of Object.values(versions.geometry)) {
         for (const polygon of geometry.polygons) {

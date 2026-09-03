@@ -5,8 +5,9 @@ import { readFileSync, writeFileSync } from "node:fs";
  * criterion, and JSON.stringify preserves insertion order, which differs
  * between construction paths that produce equivalent values.
  *
- * Keys sort by code point via plain comparison, never localeCompare, which is
- * locale-dependent and would make output vary by machine.
+ * Keys sort by UTF-16 code unit via plain comparison, never localeCompare,
+ * which is locale-dependent and would make output vary by machine. (Code unit
+ * and code point order agree everywhere except above U+FFFF.)
  */
 export function stableStringify(value: unknown): string {
   if (value === null) return "null";

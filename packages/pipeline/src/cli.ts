@@ -44,12 +44,28 @@ function runBuild(): void {
   });
 
   const n = report.normalise;
+  const nc = report.normaliseLand.coarse;
+  const nm = report.normaliseLand.mid;
+  const c = report.identityConflicts;
   console.log(`\n  ${report.polities} polities, ${report.versions} versions -> ${outDir}`);
   console.log(
     `  Dropped: ${n.droppedNonPolity} non-POLITY, ${n.droppedYears} bad years, ` +
-      `${n.droppedGeometry} bad geometry. Closed ${n.closedRings} open rings.`,
+      `${n.droppedGeometry} bad geometry, ${n.droppedParts} bad geometry parts. ` +
+      `Closed ${n.closedRings} open rings.`,
   );
-  console.log(`  Antimeridian: ${report.polygonsCut} polygons cut.`);
+  console.log(
+    `  Land dropped: coarse ${nc.droppedGeometry} bad geometry / ${nc.droppedParts} bad parts, ` +
+      `mid ${nm.droppedGeometry} bad geometry / ${nm.droppedParts} bad parts.`,
+  );
+  console.log(
+    `  Identity conflicts (first non-null kept, later value discarded): ` +
+      `${c.wikidata} wikidata, ${c.wikipedia} wikipedia, ${c.seshat} seshat.`,
+  );
+  console.log(`  Antimeridian: ${report.polygonsCut} version polygons cut.`);
+  console.log(
+    `  Antimeridian (land): ${report.landPolygonsCut.coarse} coarse, ` +
+      `${report.landPolygonsCut.mid} mid polygons cut.`,
+  );
   console.log(`  Overlaps (whitelisted): ${report.overlaps}.`);
   console.log(`  Land: ${report.landPolygons.coarse} coarse, ${report.landPolygons.mid} mid.\n`);
 }

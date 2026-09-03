@@ -1,7 +1,7 @@
 # Fixtures
 
 A deterministic carve of the real, pinned upstream data. Committed so tests and
-a first run work without a 100+ MB download.
+a first run work without a 46 MB download (165 MB once unpacked).
 
 Regenerate with `pnpm extract-fixture` after `pnpm fetch:sources`. Regeneration
 is a deliberate act -- it happens when an upstream pin changes, and the diff is

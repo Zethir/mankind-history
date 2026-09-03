@@ -39,6 +39,6 @@ describe("canonical types", () => {
     expect(COORD_SCALE.full).toBe(1e9);
     expect(COORD_SCALE.mid).toBe(1e6);
     expect(COORD_SCALE.coarse).toBe(1e5);
-    expect(MAX_SEGMENT_X).toBe(2.7);
+    expect(MAX_SEGMENT_X).toBe(4.0);
   });
 });

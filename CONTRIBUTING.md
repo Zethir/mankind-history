@@ -5,7 +5,7 @@
 ```bash
 nvm use          # Node 22, pinned in .nvmrc
 pnpm install
-pnpm fetch:sources  # downloads and checksum-verifies the pinned sources, ~100 MB, once
+pnpm fetch:sources  # downloads and checksum-verifies the pinned sources, ~46 MB (165 MB unpacked), once
 ```
 
 `pnpm fetch:sources` is only needed for a full build. Tests run against the

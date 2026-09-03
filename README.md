@@ -38,8 +38,9 @@ pnpm build             # writes dist/
 pnpm test
 ```
 
-`pnpm fetch:sources` downloads roughly 100 MB once. `pnpm test` itself needs
-no download - it runs against the committed fixture in `fixtures/`.
+`pnpm fetch:sources` downloads about 46 MB once, 165 MB after unpacking.
+`pnpm test` itself needs no download - it runs against the committed fixture
+in `fixtures/`.
 
 ## Layout
 

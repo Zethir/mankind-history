@@ -4,11 +4,21 @@ import type { LonLat, LonLatPolygon, LonLatRing } from "./normalise";
  * A ring crosses the antimeridian when a segment between consecutive vertices
  * jumps more than 180 degrees of longitude, which is how GeoJSON expresses a
  * crossing: 170 followed by -170 is a 20-degree step written as a 340 one.
+ *
+ * One shape produces the same wide jump without being a crossing: a polar cap
+ * ring that runs along a pole, e.g. Natural Earth's Antarctica, which steps
+ * from [180, -90] to [-180, -90]. Both endpoints are the same point on the
+ * globe -- lines of longitude converge to nothing at a pole -- so this is a
+ * zero-length seam along the pole line, not 360 degrees of travel. Unwrapping
+ * and band-clipping it fabricates a chord across the map that never existed
+ * (see docs/decisions/0012-antimeridian-cutting.md), so a step is only a
+ * crossing when at least one endpoint is off the pole.
  */
 export function ringWraps(ring: LonLatRing): boolean {
   for (let i = 1; i < ring.length; i++) {
     const a = ring[i - 1] as LonLat;
     const b = ring[i] as LonLat;
+    if (Math.abs(a[1]) === 90 && Math.abs(b[1]) === 90) continue;
     if (Math.abs(b[0] - a[0]) > 180) return true;
   }
   return false;

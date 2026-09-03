@@ -1,7 +1,8 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Manifest, readArtifact, type VersionsArtifact } from "@history/model";
+import type { Manifest, VersionsArtifact } from "@history/model";
+import { readArtifact } from "@history/model/artifact";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { build } from "../src/build";
 

@@ -1,4 +1,3 @@
-export * from "./artifact";
 export * from "./canon";
 export * from "./ids";
 export * from "./normalize-name";

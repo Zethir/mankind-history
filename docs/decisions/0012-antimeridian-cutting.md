@@ -10,8 +10,10 @@ anything in `stages/antimeridian.ts`.**
 GeoJSON writes a polygon crossing 180 degrees longitude as a jump: 170 followed
 by -170. Projected naively into Equal Earth, that segment becomes a line across
 the entire map, and the polygon fills as a stripe through every continent
-between them. Only a handful of Cliopatria rows are affected, but the artifact
-is grossly wrong wherever they are.
+between them. Zero Cliopatria rows are affected -- the maximum absolute
+longitude in the pinned release is exactly 180, and a full build cuts none of
+them -- but the artifact would be grossly wrong wherever a future release did
+introduce one.
 
 ## Decision
 
@@ -31,6 +33,29 @@ The distinction against clipping to a viewport bbox (deliberately not done, see
 the Phase 0 spike's `extract.mjs`) is that a bbox edge cuts through the middle
 of the map where a reader reads it as a border. The antimeridian is the seam the
 projection already has.
+
+## A pole seam is not a crossing
+
+Natural Earth's Antarctica ring exposed a second shape that produces the same
+longitude jump without being a crossing at all. A polar cap is written the
+standard way: the ring runs along the continent's edge, reaches the pole at
+one extreme longitude (`[180, -90]`), and steps to the other extreme
+(`[-180, -90]`) before continuing. That step is 360 degrees of longitude by
+the raw numbers, but zero distance on the globe -- every line of longitude
+converges to the same point at a pole, so `[180, -90]` and `[-180, -90]` are
+the same spot. Treating it as a crossing unwrapped the ring, split it across
+two 360-degree bands, and let Sutherland-Hodgman close each piece with a
+fabricated edge along a parallel -- exactly the invented geometry this
+decision exists to prevent, measured at just under 1% of world land area
+before it was caught.
+
+The fix distinguishes the two cases on the endpoints, not just the jump size:
+a step of more than 180 degrees only counts as a crossing when at least one
+endpoint is off the pole (`|lat| !== 90`). A ring with both endpoints on the
+same pole is left untouched; its seam projects to the correct horizontal edge
+along the top or bottom of the map. See `ringWraps` in
+`packages/pipeline/src/stages/antimeridian.ts` and the polar-cap regression
+test in `packages/pipeline/tests/antimeridian.test.ts`.
 
 ## Consequences
 

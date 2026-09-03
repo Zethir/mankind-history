@@ -62,13 +62,33 @@ describe("assignIdentity", () => {
       row({ wikidata: "Q1", wikipedia: null, seshat: null }),
       row({ wikidata: "Q1", wikipedia: "Roman_Empire", seshat: "12" }),
     ];
-    const { polities } = assignIdentity(rows, []);
+    const { polities, conflicts } = assignIdentity(rows, []);
     expect(polities[0]).toMatchObject({
       id: "name:Roman Empire",
       wikidata: "Q1",
       wikipedia: "Roman_Empire",
       seshat: "12",
     });
+    expect(conflicts).toEqual({ wikidata: 0, wikipedia: 0, seshat: 0 });
+  });
+
+  it("counts, rather than silently drops, a row whose seshat id disagrees with the one already assigned", () => {
+    const rows = [
+      row({ seshat: "pk_kachi_pre_urban" }),
+      row({ seshat: "some_other_id" }),
+      row({ seshat: "a_third_id" }),
+    ];
+    const { polities, conflicts } = assignIdentity(rows, []);
+    // First non-null still wins: the polity keeps the first row's id.
+    expect(polities[0]?.seshat).toBe("pk_kachi_pre_urban");
+    // Both later, disagreeing rows are counted rather than vanishing.
+    expect(conflicts).toEqual({ wikidata: 0, wikipedia: 0, seshat: 2 });
+  });
+
+  it("does not count a repeat of the same value as a conflict", () => {
+    const rows = [row({ wikidata: "Q1" }), row({ wikidata: "Q1" })];
+    const { conflicts } = assignIdentity(rows, []);
+    expect(conflicts.wikidata).toBe(0);
   });
 
   it("stores the normalised name so the deferred drift report has data to diff", () => {

@@ -22,6 +22,23 @@ const straddling: LonLatRing = [
   [170, 0],
 ];
 
+/**
+ * A polar cap ring shaped like Natural Earth's Antarctica: it runs along the
+ * top of a continent, down to the pole at lon 180, steps across to lon -180
+ * along the pole line (both points are the same spot on the globe, not a
+ * 360-degree jump), then back up to close. This is the shape that exposed the
+ * bug -- see docs/decisions/0012-antimeridian-cutting.md.
+ */
+const polarCap: LonLatRing = [
+  [0, -80],
+  [90, -75],
+  [180, -80],
+  [180, -90],
+  [-180, -90],
+  [-90, -85],
+  [0, -80],
+];
+
 describe("ringWraps", () => {
   it("is false for an ordinary ring", () => {
     expect(ringWraps(box(0, 0, 10, 10))).toBe(false);
@@ -35,6 +52,13 @@ describe("ringWraps", () => {
   });
   it("is true when a segment jumps more than 180 degrees", () => {
     expect(ringWraps(straddling)).toBe(true);
+  });
+  it("is false for a polar cap whose seam runs along a pole, not across it", () => {
+    // [180, -90] -> [-180, -90] is a 360-degree step in longitude but a
+    // zero-length step on the globe: both points are the same spot at the
+    // pole. Regression for the Antarctica bug: this used to read true and get
+    // cut, fabricating a chord across the map.
+    expect(ringWraps(polarCap)).toBe(false);
   });
 });
 
@@ -92,6 +116,13 @@ describe("cutPolygonAtAntimeridian", () => {
     const result = cutPolygonAtAntimeridian(polygon);
     const east = result.find((poly) => (poly[0] as LonLatRing).some(([lon]) => lon > 0));
     expect(east).toHaveLength(2);
+  });
+
+  it("leaves a polar cap unchanged, as a single polygon, instead of cutting the pole seam", () => {
+    const polygon: LonLatPolygon = [polarCap];
+    const result = cutPolygonAtAntimeridian(polygon);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual(polygon);
   });
 });
 

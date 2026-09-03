@@ -2,7 +2,12 @@
 export interface Polity {
   id: string;
   name: string;
-  /** Lowercased, diacritic-stripped slug. The fallback identity key. */
+  /**
+   * Lowercased, diacritic-stripped slug. Not an identity key -- decision 0011
+   * keys `id` on the raw `name` -- and not unique either (34 normalised names
+   * collide across the full polity set). Stored for the deferred drift
+   * report only.
+   */
   normalizedName: string;
   /** Reference identifiers for future enrichment joins, not outbound links. */
   wikidata: string | null;
@@ -18,7 +23,7 @@ export interface SourceRef {
 
 /** One dated territorial assertion about a polity. */
 export interface Version {
-  /** `${polityId}@${fromYear}`. Unique — enforced by an acceptance criterion. */
+  /** `${polityId}@${fromYear}`. Unique -- enforced by an acceptance criterion. */
   id: string;
   polityId: string;
   /** Integer, negative for BCE. */
@@ -30,7 +35,7 @@ export interface Version {
   prevId: string | null;
   delta: number | null;
   gap: number | null;
-  /** Always null in Phase 1 — no licensed source. See decision 0005. */
+  /** Always null in Phase 1 -- no licensed source. See decision 0005. */
   confidence: number | null;
   source: SourceRef;
 }

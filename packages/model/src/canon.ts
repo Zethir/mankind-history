@@ -37,8 +37,12 @@ export const LEVEL_INDEX = {
 export const WORLD_HALF_WIDTH = 2.70663;
 
 /**
- * A single segment between consecutive projected vertices wider than this spans
- * more than 180 degrees of longitude, which in this dataset only ever means an
- * uncut antimeridian crossing rather than real geometry.
+ * A single segment between consecutive projected vertices wider than this is
+ * an uncut antimeridian crossing rather than real geometry. Two measured
+ * bounds set it: a correct pole seam (Antarctica's ring stepping from lon 180
+ * to lon -180 along lat -90, left uncut -- see
+ * docs/decisions/0012-antimeridian-cutting.md) projects to 3.2072 units at its
+ * widest, while a genuine uncut crossing spans nearly the full map width,
+ * about 5.4 units. 4.0 sits above the former and well below the latter.
  */
-export const MAX_SEGMENT_X = 2.7;
+export const MAX_SEGMENT_X = 4.0;

@@ -1,7 +1,8 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { COORD_SCALE, type Manifest, readArtifact, type VersionsArtifact } from "@history/model";
+import { COORD_SCALE, type Manifest, type VersionsArtifact } from "@history/model";
+import { readArtifact } from "@history/model/artifact";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { SourceSpec } from "../src/sources";
 import { emit } from "../src/stages/emit";

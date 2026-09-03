@@ -16,8 +16,8 @@ import {
   type Version,
   type VersionGeometry,
   type VersionsArtifact,
-  writeArtifact,
 } from "@history/model";
+import { writeArtifact } from "@history/model/artifact";
 import type { SourceSpec } from "../sources";
 
 export interface EmitInput {

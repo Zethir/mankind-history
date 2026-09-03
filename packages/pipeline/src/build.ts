@@ -4,7 +4,7 @@ import { COORD_SCALE } from "@history/model";
 import { SOURCES, type SourceSpec, sourcePath } from "./sources";
 import { cutPolygons } from "./stages/antimeridian";
 import { emit } from "./stages/emit";
-import { type AliasEntry, assignIdentity } from "./stages/identity";
+import { type AliasEntry, assignIdentity, type IdentityConflicts } from "./stages/identity";
 import { deriveLineage, type OverlapWhitelistEntry } from "./stages/lineage";
 import {
   type NormalisedRow,
@@ -23,10 +23,15 @@ export interface BuildOptions {
 
 export interface BuildReport {
   normalise: NormaliseReport;
+  /** Land features dropped during normalisation, per level -- invisible until reported. */
+  normaliseLand: { coarse: NormaliseReport; mid: NormaliseReport };
   polities: number;
   versions: number;
   overlaps: number;
+  identityConflicts: IdentityConflicts;
   polygonsCut: number;
+  /** Antimeridian cuts on the land layers, counted separately from version cuts. */
+  landPolygonsCut: { coarse: number; mid: number };
   landPolygons: { coarse: number; mid: number };
 }
 
@@ -59,7 +64,7 @@ export function build(options: BuildOptions): BuildReport {
   const { rows, report } = normaliseCliopatria(
     readCollection(sourcePath(cliopatria, options.sourcesDir)),
   );
-  const { polities, rowPolityIds } = assignIdentity(rows, options.aliases);
+  const { polities, rowPolityIds, conflicts } = assignIdentity(rows, options.aliases);
   const { versions, overlaps, rowIndexById } = deriveLineage(
     rows,
     rowPolityIds,
@@ -76,16 +81,13 @@ export function build(options: BuildOptions): BuildReport {
     geometry[version.id] = projectPolygons(cut.polygons, COORD_SCALE.full);
   }
 
-  const coarse = projectLand(
-    cutPolygons(normaliseLand(readCollection(sourcePath(ne110, options.sourcesDir))).polygons)
-      .polygons,
-    COORD_SCALE.coarse,
-  );
-  const mid = projectLand(
-    cutPolygons(normaliseLand(readCollection(sourcePath(ne50, options.sourcesDir))).polygons)
-      .polygons,
-    COORD_SCALE.mid,
-  );
+  const normalisedCoarseLand = normaliseLand(readCollection(sourcePath(ne110, options.sourcesDir)));
+  const cutCoarseLand = cutPolygons(normalisedCoarseLand.polygons);
+  const coarse = projectLand(cutCoarseLand.polygons, COORD_SCALE.coarse);
+
+  const normalisedMidLand = normaliseLand(readCollection(sourcePath(ne50, options.sourcesDir)));
+  const cutMidLand = cutPolygons(normalisedMidLand.polygons);
+  const mid = projectLand(cutMidLand.polygons, COORD_SCALE.mid);
 
   emit({
     outDir: options.outDir,
@@ -98,10 +100,13 @@ export function build(options: BuildOptions): BuildReport {
 
   return {
     normalise: report,
+    normaliseLand: { coarse: normalisedCoarseLand.report, mid: normalisedMidLand.report },
     polities: polities.length,
     versions: versions.length,
     overlaps: overlaps.length,
+    identityConflicts: conflicts,
     polygonsCut,
+    landPolygonsCut: { coarse: cutCoarseLand.cut, mid: cutMidLand.cut },
     landPolygons: { coarse: coarse.length, mid: mid.length },
   };
 }

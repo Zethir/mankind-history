@@ -13,7 +13,7 @@
     "typecheck": "tsc -p packages/model && tsc -p packages/pipeline",
     "test": "vitest run --passWithNoTests",
     "fetch:sources": "tsx packages/pipeline/src/cli.ts fetch",
-    "build": "tsx packages/pipeline/src/cli.ts build",
+    "build": "NODE_OPTIONS=--max-old-space-size=8192 tsx packages/pipeline/src/cli.ts build",
     "extract-fixture": "tsx packages/pipeline/src/cli.ts extract-fixture"
   },
   "devDependencies": {

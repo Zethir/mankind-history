@@ -1,3 +1,4 @@
+import { build, loadAliases, loadOverlaps } from "./build";
 import { fetchSource } from "./fetch/download";
 import { SOURCES } from "./sources";
 
@@ -29,10 +30,33 @@ async function runFetch(): Promise<void> {
   }
 }
 
+function runBuild(): void {
+  const sourcesDir = option("sources", "data/sources");
+  const outDir = option("out", "dist");
+  const report = build({
+    sourcesDir,
+    outDir,
+    aliases: loadAliases("packages/pipeline/aliases.json"),
+    overlaps: loadOverlaps("packages/pipeline/overlaps.json"),
+  });
+
+  const n = report.normalise;
+  console.log(`\n  ${report.polities} polities, ${report.versions} versions -> ${outDir}`);
+  console.log(
+    `  Dropped: ${n.droppedNonPolity} non-POLITY, ${n.droppedYears} bad years, ` +
+      `${n.droppedGeometry} bad geometry. Closed ${n.closedRings} open rings.`,
+  );
+  console.log(`  Antimeridian: ${report.polygonsCut} polygons cut.`);
+  console.log(`  Overlaps (whitelisted): ${report.overlaps}.`);
+  console.log(`  Land: ${report.landPolygons.coarse} coarse, ${report.landPolygons.mid} mid.\n`);
+}
+
 const command = process.argv[2];
 if (command === "fetch") {
   await runFetch();
+} else if (command === "build") {
+  runBuild();
 } else {
-  console.error(`Unknown command "${command ?? ""}". Known: fetch`);
+  console.error(`Unknown command "${command ?? ""}". Known: fetch, build`);
   process.exit(1);
 }

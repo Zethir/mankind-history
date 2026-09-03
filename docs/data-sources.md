@@ -50,6 +50,17 @@ classical Mediterranean is the best-covered slice in the dataset, and treating
 it as representative will mislead you. This is the single most important thing
 to know about this data.
 
+**One name can span states a historian would separate.** Cliopatria keys entities
+on `Name` and sometimes gives one name to what are arguably distinct polities:
+`Later Zhou` runs -750 to 960 with a 1,217-year hole in the middle, `Kingdom of
+Italy` covers both the medieval kingdom and the 1861 one, and `Georgia` spans the
+medieval kingdom and the 1918 republic. This is upstream's own modelling, not an
+artefact of our identity key - each of those carries a single Wikidata id too, so
+keying on Wikidata would merge them identically (see 0011). Only five polities
+have a gap over 500 years and only one over 1,000, and the derived `gap` field
+makes every one of them visible: decision 0004 suppresses the expansion flash
+above a 50-year gap, so none of these produce a fabricated event.
+
 `RELATION` rows encode composite and membership structure rather than plain
 territory. Currently filtered out. Rendering them is an open design question.
 

@@ -11,6 +11,13 @@ wins on *how*.
 
 ## Scope and milestones
 
+> The Milestone 1 implementation plan lived at `docs/phase-1-milestone-1-plan.md`
+> and was removed once the milestone landed: its content is absorbed by the code,
+> the tests, decision records 0010-0012 and this document, and 4,100 lines of
+> stale code snippets are worse than none. Recover it with
+> `git show 4b7ffcb2f465509f9cfdd2f7216910629f73e7a1:docs/phase-1-milestone-1-plan.md`.
+
+
 Phase 1 processes the **entire** Cliopatria dataset — whole world, 3400 BCE to
 2024 CE — plus Natural Earth land, into the `dist/` artifact set. It is not
 region- or era-scoped; the Phase 0 spike was, this is not.

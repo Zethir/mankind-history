@@ -1,6 +1,9 @@
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { build, loadAliases, loadOverlaps } from "./build";
 import { fetchSource } from "./fetch/download";
 import { SOURCES } from "./sources";
+import { selectFeatures } from "./stages/extract-fixture";
 
 function flag(name: string): boolean {
   return process.argv.includes(`--${name}`);
@@ -51,12 +54,46 @@ function runBuild(): void {
   console.log(`  Land: ${report.landPolygons.coarse} coarse, ${report.landPolygons.mid} mid.\n`);
 }
 
+function runExtractFixture(): void {
+  const sourcesDir = option("sources", "data/sources");
+  const outDir = option("out", "fixtures");
+  mkdirSync(outDir, { recursive: true });
+
+  // ne_110m_land.geojson is carried through whole, unfiltered: the coarse
+  // layer is small and global (it is what a global view needs), so there is
+  // no size reason to carve it, and carving it would leave a golden artifact
+  // that a broken land pipeline could never make fail. ne_50m_land.geojson
+  // is detailed and regional by nature, so it is still carved to the box
+  // like cliopatria_polities_only.geojson.
+  const filtered = new Set(["cliopatria_polities_only.geojson", "ne_50m_land.geojson"]);
+
+  for (const file of [
+    "cliopatria_polities_only.geojson",
+    "ne_110m_land.geojson",
+    "ne_50m_land.geojson",
+  ]) {
+    const parsed = JSON.parse(readFileSync(join(sourcesDir, file), "utf8")) as {
+      features: unknown[];
+    };
+    const features = filtered.has(file) ? selectFeatures(parsed.features) : parsed.features;
+    // Not the artifact writer: this is source-shaped GeoJSON, not an artifact.
+    writeFileSync(
+      join(outDir, file),
+      `${JSON.stringify({ type: "FeatureCollection", features })}\n`,
+    );
+    const note = filtered.has(file) ? "" : " (copied whole, unfiltered)";
+    console.log(`  ${file}: ${features.length} of ${parsed.features.length} features${note}`);
+  }
+}
+
 const command = process.argv[2];
 if (command === "fetch") {
   await runFetch();
 } else if (command === "build") {
   runBuild();
+} else if (command === "extract-fixture") {
+  runExtractFixture();
 } else {
-  console.error(`Unknown command "${command ?? ""}". Known: fetch, build`);
+  console.error(`Unknown command "${command ?? ""}". Known: fetch, build, extract-fixture`);
   process.exit(1);
 }

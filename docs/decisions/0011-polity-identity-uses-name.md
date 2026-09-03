@@ -31,6 +31,14 @@ the composite-key patch was itself found to be wrong, since normalising the
 name merges "Macedonian Empire" with "(Macedonian Empire)", which the source
 lists as two distinct rows over identical year ranges.
 
+The louder failure - hundreds of duplicate from_year rows crashing the build -
+is not the worst one. Northern Song ends in 1027 and Southern Song begins in
+1028: adjacent, non-overlapping, and sharing a Wikidata id. Keyed on that id
+they would never trip the duplicate check at all. They would splice silently
+into one continuous lineage chain, with delta and gap computed across the
+dynastic boundary, feeding a fabricated smooth transition into the expansion
+flash of decision 0004. A crash is recoverable; a plausible-looking lie is not.
+
 ## Decision
 
 `resolvePolityId` keys on the raw upstream `Name`, unnormalised:

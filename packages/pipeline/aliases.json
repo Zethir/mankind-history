@@ -1,0 +1,4 @@
+{
+  "$comment": "Hand-maintained polity identity fixes. See docs/decisions/0007-polity-identity.md. Every entry needs a reason.",
+  "aliases": []
+}

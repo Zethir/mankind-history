@@ -1,7 +1,7 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Manifest, VersionsArtifact } from "@history/model";
+import type { ChangesArtifact, Manifest, VersionsArtifact } from "@history/model";
 import { readArtifact } from "@history/model/artifact";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { build } from "../src/build";
@@ -59,8 +59,8 @@ describe("build", () => {
     rmSync(join(sourcesDir, ".."), { recursive: true, force: true });
   });
 
-  it("produces the Milestone 1 artifact set end to end", () => {
-    const report = build({ sourcesDir, outDir, aliases: [], overlaps: [] });
+  it("produces the Milestone 1 artifact set end to end", async () => {
+    const report = await build({ sourcesDir, outDir, aliases: [], overlaps: [] });
     expect(report.normalise.kept).toBe(3);
     expect(report.normalise.droppedNonPolity).toBe(1);
     expect(report.polities).toBe(2);
@@ -73,21 +73,39 @@ describe("build", () => {
     expect(second?.gap).toBe(50);
   });
 
-  it("attaches geometry to every version it emits", () => {
-    build({ sourcesDir, outDir, aliases: [], overlaps: [] });
+  it("attaches geometry to every version it emits", async () => {
+    await build({ sourcesDir, outDir, aliases: [], overlaps: [] });
     const versions = readArtifact<VersionsArtifact>(join(outDir, "versions.2.json"));
     for (const row of versions.rows) {
       expect(versions.geometry[row.id]).toBeDefined();
     }
   });
 
-  it("copies source provenance into the manifest", () => {
-    build({ sourcesDir, outDir, aliases: [], overlaps: [] });
+  it("copies source provenance into the manifest", async () => {
+    await build({ sourcesDir, outDir, aliases: [], overlaps: [] });
     const manifest = readArtifact<Manifest>(join(outDir, "manifest.json"));
     expect(manifest.sources.map((s) => s.dataset).sort()).toEqual([
       "cliopatria",
       "naturalEarth110mLand",
       "naturalEarth50mLand",
     ]);
+  });
+
+  it("emits all three levels and a change index", async () => {
+    await build({ sourcesDir, outDir, aliases: [], overlaps: [] });
+    for (const f of ["versions.0.json", "versions.1.json", "versions.2.json", "changes.json"]) {
+      expect(readFileSync(join(outDir, f), "utf8").length).toBeGreaterThan(0);
+    }
+    const changes = readArtifact<ChangesArtifact>(join(outDir, "changes.json"));
+    expect(changes.cells).toHaveLength(changes.grid.cols * changes.grid.rows);
+    expect(changes.cells.flat().length).toBeGreaterThan(0);
+  });
+
+  it("simplifies coarser levels without losing any version", async () => {
+    await build({ sourcesDir, outDir, aliases: [], overlaps: [] });
+    const full = readArtifact<VersionsArtifact>(join(outDir, "versions.2.json"));
+    const coarse = readArtifact<VersionsArtifact>(join(outDir, "versions.0.json"));
+    expect(Object.keys(coarse.geometry).sort()).toEqual(Object.keys(full.geometry).sort());
+    for (const g of Object.values(coarse.geometry)) expect(g.polygons.length).toBeGreaterThan(0);
   });
 });

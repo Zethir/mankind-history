@@ -33,10 +33,10 @@ async function runFetch(): Promise<void> {
   }
 }
 
-function runBuild(): void {
+async function runBuild(): Promise<void> {
   const sourcesDir = option("sources", "data/sources");
   const outDir = option("out", "dist");
-  const report = build({
+  const report = await build({
     sourcesDir,
     outDir,
     aliases: loadAliases("packages/pipeline/aliases.json"),
@@ -67,7 +67,12 @@ function runBuild(): void {
       `${report.landPolygonsCut.mid} mid polygons cut.`,
   );
   console.log(`  Overlaps (whitelisted): ${report.overlaps}.`);
-  console.log(`  Land: ${report.landPolygons.coarse} coarse, ${report.landPolygons.mid} mid.\n`);
+  console.log(`  Land: ${report.landPolygons.coarse} coarse, ${report.landPolygons.mid} mid.`);
+  console.log(
+    `  Levels: coarse ${report.levels.coarse.vertices.toLocaleString()} vertices ` +
+      `at ${report.levels.coarse.percent}%, mid ${report.levels.mid.vertices.toLocaleString()} ` +
+      `at ${report.levels.mid.percent}%.\n`,
+  );
 }
 
 function runExtractFixture(): void {
@@ -106,7 +111,7 @@ const command = process.argv[2];
 if (command === "fetch") {
   await runFetch();
 } else if (command === "build") {
-  runBuild();
+  await runBuild();
 } else if (command === "extract-fixture") {
   runExtractFixture();
 } else {

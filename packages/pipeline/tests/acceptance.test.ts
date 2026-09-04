@@ -54,9 +54,9 @@ function allPolygonGroups(): Polygon[][] {
 // cheap insurance.)
 const BUILD_TIMEOUT = 60_000;
 
-beforeAll(() => {
+beforeAll(async () => {
   outDir = mkdtempSync(join(tmpdir(), "acceptance-"));
-  buildFixtureInto(outDir);
+  await buildFixtureInto(outDir);
   versions = readArtifact<VersionsArtifact>(join(outDir, "versions.2.json"));
   polities = readArtifact<PolitiesArtifact>(join(outDir, "polities.json"));
   manifest = readArtifact<Manifest>(join(outDir, "manifest.json"));
@@ -254,10 +254,10 @@ describe("identity and honesty", () => {
 describe("build", () => {
   it(
     "is deterministic: identical inputs produce byte-identical outputs",
-    () => {
+    async () => {
       const second = mkdtempSync(join(tmpdir(), "acceptance-2-"));
       try {
-        buildFixtureInto(second);
+        await buildFixtureInto(second);
         const files = readdirSync(outDir).sort();
         expect(readdirSync(second).sort()).toEqual(files);
         for (const file of files) {

@@ -76,3 +76,41 @@ export const PX_PER_UNIT = {
   mid: 2069,
   full: 16552,
 } as const;
+
+/**
+ * Visvalingam vertex-retention percentage per level, passed to mapshaper.
+ *
+ * Chosen by measurement, not by feel: see the table in the Milestone 2 plan.
+ * The rule is the LEAST aggressive simplification that meets the budget, since
+ * the 8 MB gzipped ceiling applies only to the coarsest artifact and fidelity
+ * matters more than bytes here. `full` is 100 because it is not simplified.
+ *
+ * Measured on the full real dataset (13,380 versions, 3,422,830 vertices,
+ * dist/versions.2.json), one mapshaper call per level over every version,
+ * rescaled to each level's COORD_SCALE and serialised exactly as emit.ts
+ * would. Percent -> vertices retained / resulting versions.0.json gzip size:
+ *   0 -> 60.8% / 2.50 MB    10 -> 63.4% / 2.58 MB    30 -> 70.1% / 3.02 MB
+ *  50 -> 78.6% / 3.53 MB    70 -> 87.4% / 4.27 MB   100 -> 100.0% / 6.21 MB
+ * The 8 MB budget does not bind anywhere in this range -- even 100 (no
+ * simplification at all) fits, because it is coarse's 1e5 coordinate scale,
+ * not its vertex count, that does most of the size reduction from full's
+ * 1e9. `coarse` is 30: the least aggressive value in the brief's tested
+ * candidate range [1, 2, 5, 10, 20, 30], giving real simplification
+ * appropriate for a global zoomed-out view (see PX_PER_UNIT.coarse) while
+ * leaving 62% headroom under the ceiling for future dataset growth. `mid` is
+ * 60: of the values measured, the one closest to the vertex count midway
+ * between coarse and full (2,834,596 against a target of 2,911,520).
+ *
+ * A retention curve attributed earlier to this dataset (0 -> 43.8%,
+ * 10 -> 48.8%, ...) in fact measured only the first 2,000 of its 13,380
+ * versions -- confirmed by reproducing that subset's exact vertex counts
+ * (964,929 in, 473,856 out at 10%). The full dataset retains substantially
+ * more at every percentage: it holds proportionally more small, already
+ * near-minimal shapes that cannot lose many vertices. See the Task 4 report
+ * for the full measured table, including sizes at every tested percentage.
+ */
+export const SIMPLIFY_PERCENT = {
+  coarse: 30,
+  mid: 60,
+  full: 100,
+} as const;

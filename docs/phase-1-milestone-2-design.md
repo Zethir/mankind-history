@@ -82,10 +82,18 @@ budget applies to the coarsest artifact only.
 
 ## Simplification
 
-A separate cached command, `pipeline simplify`, writing to `data/simplified/`.
-This follows the pattern Milestone 1 established for stages that are slow or
-impure: fetch and simplify are cached commands, and the core transform stays a
-fast in-process pipeline that can be iterated on cheaply.
+Simplification runs **inline inside `build`**.
+
+An earlier draft of this design proposed a separate cached `pipeline simplify`
+command, following the pattern Milestone 1 used for `fetch`. That pattern fits
+`fetch` because it is slow *and* impure. Simplification is neither. It is
+deterministic, and it consumes projected geometry that only `build` produces --
+so a separate command must either duplicate the whole pipeline or create a
+circular dependency, with `build` needing `simplify`'s output and `simplify`
+needing `build`'s. It would also require a second committed tree under
+`fixtures/` for `fixture:bless` to work. Inline avoids all three. If a full run
+proves slow enough to be painful, caching becomes a measured decision rather
+than an assumed one.
 
 **mapshaper**, via its programmatic API, at a pinned version.
 
@@ -235,8 +243,9 @@ fail.
 | `.github/workflows/full-build.yml` | assert the 8 MB budget rather than printing it |
 | `docs/architecture.md`, package READMEs | describe the new stages and artifacts |
 
-New source files: `stages/simplify.ts`, `stages/index.ts`, `stages/histogram.ts`,
-`regions.ts`.
+New source files: `stages/simplify.ts`, `stages/change-index.ts`,
+`stages/histogram.ts`, `regions.ts`. (`change-index.ts` rather than `index.ts`,
+which inside a `stages/` directory would read as a module index.)
 
 ## New decision record
 

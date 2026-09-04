@@ -16,12 +16,25 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm fetch:sources
       - run: pnpm build
-      - name: Report artifact sizes against the 8 MB budget
+      - name: Report artifact sizes and enforce the 8 MB coarse budget
         run: |
           node -e "
             const m = require('./dist/manifest.json');
             for (const a of m.artifacts) {
               console.log(a.file, a.bytes, 'bytes,', a.gzipBytes, 'gzipped');
+            }
+            const budget = 8 * 1024 * 1024;
+            const coarse = m.artifacts.find((a) => a.file === 'versions.0.json');
+            if (!coarse) {
+              console.error('versions.0.json is missing from manifest.artifacts');
+              process.exit(1);
+            }
+            if (coarse.gzipBytes >= budget) {
+              console.error(
+                'versions.0.json is ' + coarse.gzipBytes + ' bytes gzipped, at or over the ' +
+                  budget + ' byte budget',
+              );
+              process.exit(1);
             }
           "
       - uses: actions/upload-artifact@v4

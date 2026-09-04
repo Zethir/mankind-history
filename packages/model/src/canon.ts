@@ -64,7 +64,7 @@ export const GRID = { cols: 64, rows: 32 } as const;
 
 /**
  * PROVISIONAL. Screen pixels per projected unit at the coarsest zoom each level
- * is expected to serve, used only by the no-new-gaps acceptance criterion.
+ * is expected to serve, consumed by the no-new-gaps acceptance criterion.
  *
  * These encode a Phase 2 viewport assumption that does not exist yet: a
  * 1400-pixel-wide window showing the whole world at coarse, an eighth of it at

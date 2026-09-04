@@ -46,3 +46,33 @@ export const WORLD_HALF_WIDTH = 2.70663;
  * about 5.4 units. 4.0 sits above the former and well below the latter.
  */
 export const MAX_SEGMENT_X = 4.0;
+
+/** Half the projected world height: y at lat 90. */
+export const WORLD_HALF_HEIGHT = 1.31736;
+
+/**
+ * Change-index grid, uniform over projected space. Because the projection is
+ * equal-area, uniform cells mean uniform real area per cell rather than uniform
+ * degrees.
+ *
+ * 64x32 measured at 33 KB gzipped over the real dataset, against 9 KB for
+ * 24x12 -- the index is negligible at every resolution tried, so this is chosen
+ * for query precision rather than size. See
+ * docs/decisions/0013-index-buckets-polygons.md.
+ */
+export const GRID = { cols: 64, rows: 32 } as const;
+
+/**
+ * PROVISIONAL. Screen pixels per projected unit at the coarsest zoom each level
+ * is expected to serve, used only by the no-new-gaps acceptance criterion.
+ *
+ * These encode a Phase 2 viewport assumption that does not exist yet: a
+ * 1400-pixel-wide window showing the whole world at coarse, an eighth of it at
+ * mid, and a sixty-fourth at full. The projected world is 5.4133 units wide.
+ * Phase 2 should replace these with the viewer's real figures.
+ */
+export const PX_PER_UNIT = {
+  coarse: 259,
+  mid: 2069,
+  full: 16552,
+} as const;

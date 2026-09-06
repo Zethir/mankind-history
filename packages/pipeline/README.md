@@ -6,7 +6,7 @@ writer. Never imported by the viewer (decision 0009).
 
 ## Commands
 
-All three are subcommands of `packages/pipeline/src/cli.ts`, invoked through
+All four are subcommands of `packages/pipeline/src/cli.ts`, invoked through
 the root `package.json` scripts. Every path is an explicit flag - no
 implicit working-directory magic (`docs/standards.md`).
 
@@ -31,8 +31,8 @@ Reads: nothing (network only). Writes: `data/sources/*`.
 ### `build` (`pnpm build`)
 
 Runs the pipeline stages in-process against already-fetched sources and
-writes the `dist/` artifact set: `polities.json`, `versions.2.json`,
-`land.0.json`, `land.1.json`, `manifest.json`.
+writes the `dist/` artifact set: `polities.json`, `versions.0/1/2.json`,
+`land.0.json`, `land.1.json`, `changes.json`, `manifest.json`.
 
 ```
 pnpm build                                    # data/sources -> dist
@@ -60,6 +60,35 @@ pnpm extract-fixture                          # data/sources -> fixtures
 
 Reads: the same three files as `build`, from `<--sources>` (default
 `data/sources`). Writes: `<--out>/*.geojson` (default `fixtures`).
+
+### `histogram` (`pnpm histogram`)
+
+Reads `dist/changes.json` and reports, per region, how change years are
+distributed over time and how much decision 0006's viewport-scoped playback
+acceleration would engage there - the number Phase 0 asked for and nothing
+until this stage could produce. Prints an ASCII bar chart of distinct change
+years per bucket plus the acceleration summary; `--out` also writes the
+result as JSON.
+
+```
+pnpm histogram                                 # all four Phase 0 regions, all years
+pnpm histogram -- --region=subsaharan          # one named region (see regions.ts)
+pnpm histogram -- --bbox=-10,25,45,50          # minLon,minLat,maxLon,maxLat
+pnpm histogram -- --era=classical              # named era (see regions.ts)
+pnpm histogram -- --from=-500 --to=500         # explicit year range
+pnpm histogram -- --bucket=100                 # years per histogram bucket
+pnpm histogram -- --speed=4 --deadtime=7       # yr/s and dead-time ceiling (seconds)
+pnpm histogram -- --dist=dist --out=report.json
+```
+
+Measured against the pinned real dataset at the defaults: Mediterranean 37%,
+World 37%, Southeast Asia 54%, Sub-Saharan Africa 62% of the timeline
+accelerated. Mediterranean and World come out identical because, at this
+grid's resolution, the Mediterranean's cell range already contains every
+change year on the map - see decision 0013's cost and
+`docs/architecture.md`'s note on temporal coverage.
+
+Reads: `<--dist>/changes.json` (default `dist`). Writes: `<--out>` if given.
 
 ## Bumping an upstream source
 

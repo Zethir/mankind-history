@@ -105,16 +105,56 @@ each version to its predecessor.
    antimeridian (decision 0012 - see the note below). Coordinates are rounded
    to scaled integers at build time, so no float-formatting decision reaches
    the output.
-6. **Emit** (`stages/emit.ts`) - writes `polities.json`, `versions.2.json`,
+6. **Simplify** (`stages/simplify.ts`) - topology-preserving simplification via
+   mapshaper (Visvalingam weighted, `keep-shapes`), producing `versions.1.json`
+   (mid, 60% vertex retention) and `versions.0.json` (coarse, 30%) for the
+   viewer's regional and global zoom levels. Every group of polygons goes
+   through mapshaper in **one call**, not one call per polity: mapshaper
+   detects the arcs two neighbouring polities' borders actually share and
+   simplifies each shared arc identically, which is what stops a border
+   opening a gap against itself. This works on Cliopatria specifically because
+   the dataset shares vertex positions between polities to begin with -
+   3,422,830 total vertices reduce to 104,966 distinct positions, and 74.6% of
+   those distinct positions are used by more than one polity. Simplify
+   anything with less real sharing and the same one-call approach would have
+   little topology to preserve.
+7. **Index** (`stages/change-index.ts`) - a spatially-bucketed change-year
+   index, `changes.json`, backing decision 0006's viewport-scoped "when does
+   this view next change". Bucketed by polygon, not by version; decision 0013
+   is why.
+8. **Emit** (`stages/emit.ts`) - writes `polities.json`, `versions.0/1/2.json`,
    `land.0.json` and `land.1.json` through the one deterministic writer, then
    `manifest.json`, which hashes and sizes everything else and records every
    source's name, licence, upstream version and checksum.
 
-Milestone 2 adds two more stages, not yet implemented: **simplify**
-(topology-preserving, at two coarser detail levels, so `versions.1.json` and
-`versions.0.json` exist for the viewer's regional and global zoom levels) and
-**index** (a spatially-bucketed change-year index, `changes.json`, backing
-decision 0006's viewport-scoped "when does this view next change").
+**On the no-new-gaps criterion.** `docs/phase-1-importer.md` states the
+acceptance criterion as a one-pixel gap bound: no border simplification may
+open a gap wider than one screen pixel between two polygons that shared an
+edge before simplification. What ships is narrower than that wording. A direct
+pixel-displacement measurement was attempted in six distinct formulations, and
+every one measured polygon *removal* rather than border *displacement* - a
+sub-pixel polygon that simplification drops entirely leaves no adjacent pair
+left to have a gap between, and cannot be told apart from a polygon that
+survived without a stable per-ring identity carried through mapshaper. What is
+asserted instead, in `packages/pipeline/tests/acceptance.test.ts`'s
+"simplification" suite, is that shared borders survive identically: 99.35% of
+shared edges on the fixture and 99.72-99.79% on the real dataset keep exactly
+the same simplified points on both sides. Displacement is computed and printed
+for the cases that don't, but not asserted against a pixel bound. The
+regression the pixel criterion was meant to catch is instead gated by the
+noisy-shared-boundary test in `packages/pipeline/tests/simplify.test.ts`,
+verified to fail when simplification is rewritten to one mapshaper call per
+group instead of one call for the whole group.
+
+**A note on temporal coverage.** `docs/data-sources.md` already warns that the
+classical Mediterranean is Cliopatria's best-covered slice and that treating it
+as representative will mislead you. The change index quantifies that warning:
+of 937 distinct change years worldwide, the single densest grid cell sits over
+Europe and alone holds 855 of them - 91% - and the Mediterranean region's cell
+range captures effectively all 937. This has a direct consequence for decision
+0006's viewport-scoped playback acceleration: it will barely engage while the
+viewport sits over Europe, because there is almost always something changing
+nearby, and it will dominate everywhere else, because there mostly isn't.
 
 **A note on the antimeridian stage.** No polygon in the pinned Cliopatria
 release actually crosses 180 degrees longitude - the maximum absolute
@@ -130,11 +170,15 @@ the fixture carries no antimeridian-adjacent slice either.
 "Identical inputs produce byte-identical outputs" is an acceptance criterion,
 but taken absolutely it isn't achievable: the projection maths calls
 `Math.sin` and `Math.asin`, whose results are engine-dependent, and
-Milestone 2's mapshaper step has its own floating-point behaviour tied to its
+mapshaper's simplification has its own floating-point behaviour tied to its
 version. Decision 0010 scopes the guarantee to a **pinned toolchain** - the
-Node version in `.nvmrc` and the exact dependency versions in the lockfile.
-Bumping either is a deliberate act that ends with re-blessing the golden
-fixture artifacts and reviewing the diff.
+Node version in `.nvmrc` and the exact dependency versions in the lockfile -
+and mapshaper is now inside that scope along with everything else: its
+determinism was verified byte-identical across independent build processes
+run against the real dataset, not assumed from its own documentation.
+Bumping either the toolchain or the mapshaper version is a deliberate act
+that ends with re-blessing the golden fixture artifacts and reviewing the
+diff.
 
 Three things make this real rather than aspirational: inputs are
 checksum-pinned so "identical inputs" is verified rather than assumed; every

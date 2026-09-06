@@ -15,6 +15,7 @@
     "fetch:sources": "tsx packages/pipeline/src/cli.ts fetch",
     "build": "NODE_OPTIONS=--max-old-space-size=8192 tsx packages/pipeline/src/cli.ts build",
     "extract-fixture": "tsx packages/pipeline/src/cli.ts extract-fixture",
+    "histogram": "tsx packages/pipeline/src/cli.ts histogram",
     "fixture:bless": "rm -rf fixtures/dist && tsx packages/pipeline/src/cli.ts build --sources=fixtures --out=fixtures/dist"
   },
   "devDependencies": {

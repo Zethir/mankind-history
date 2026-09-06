@@ -105,16 +105,82 @@ each version to its predecessor.
    antimeridian (decision 0012 - see the note below). Coordinates are rounded
    to scaled integers at build time, so no float-formatting decision reaches
    the output.
-6. **Emit** (`stages/emit.ts`) - writes `polities.json`, `versions.2.json`,
+6. **Simplify** (`stages/simplify.ts`) - topology-preserving simplification via
+   mapshaper (Visvalingam weighted, `keep-shapes`), producing `versions.1.json`
+   (mid, 60% vertex retention) and `versions.0.json` (coarse, 30%) for the
+   viewer's regional and global zoom levels. Every group of polygons goes
+   through mapshaper in **one call**, not one call per polity: mapshaper
+   detects the arcs two neighbouring polities' borders actually share and
+   simplifies each shared arc identically, which is what stops a border
+   opening a gap against itself. This works on Cliopatria specifically because
+   the dataset shares vertex positions between polities to begin with -
+   3,422,830 total vertices reduce to 104,966 distinct positions, and 74.6% of
+   those distinct positions are used by more than one polity. Simplify
+   anything with less real sharing and the same one-call approach would have
+   little topology to preserve.
+7. **Index** (`stages/change-index.ts`) - a spatially-bucketed change-year
+   index, `changes.json`, backing decision 0006's viewport-scoped "when does
+   this view next change". Bucketed by polygon, not by version; decision 0013
+   is why.
+8. **Emit** (`stages/emit.ts`) - writes `polities.json`, `versions.0/1/2.json`,
    `land.0.json` and `land.1.json` through the one deterministic writer, then
    `manifest.json`, which hashes and sizes everything else and records every
    source's name, licence, upstream version and checksum.
 
-Milestone 2 adds two more stages, not yet implemented: **simplify**
-(topology-preserving, at two coarser detail levels, so `versions.1.json` and
-`versions.0.json` exist for the viewer's regional and global zoom levels) and
-**index** (a spatially-bucketed change-year index, `changes.json`, backing
-decision 0006's viewport-scoped "when does this view next change").
+**On the no-new-gaps criterion.** `docs/phase-1-importer.md` states the
+acceptance criterion as a one-pixel gap bound: no border simplification may
+open a gap wider than one screen pixel between two polygons that shared an
+edge before simplification. It is measured, in
+`packages/pipeline/tests/acceptance.test.ts`'s "simplification" suite, by
+comparing **retained subsequences of shared arcs**.
+
+Six earlier formulations failed, and they failed for one reason: each asked
+"what surviving geometry is nearest this dropped point?", a question with no
+removal-free answer, so each measured a sub-polygon being *removed* rather than
+a border *moving*. The formulation that works never looks at polygons. Every
+full-detail edge is keyed direction-independently with the set of version ids
+using it; edges with two or more users are grouped by their exact co-user set
+and chained into maximal polylines. Each polyline is a shared arc, defined
+entirely from the full data. Because mapshaper drops vertices but never
+relocates them (0 of 2,400,206 coarse vertices are absent from the rescaled
+full-detail vertex set), each side's simplified border along an arc is exactly
+the retained subsequence of that arc's own points, and the two sides compare
+directly by Hausdorff distance. Ring identity across simplification - which the
+six attempts believed was required and could not be had - turns out not to be
+needed. A side retaining fewer than two of an arc's points has dropped the arc:
+that is a removal, counted separately and not measured.
+
+Measured on the real dataset, both levels seeing the same 22,215 shared arcs
+(arcs of at least three points, so none can be trivially identical):
+
+| level | identical | one side dropped | displaced | worst |
+|---|---|---|---|---|
+| coarse | 21,058 (94.8%) | 1,150 | 7 | 0.759 px |
+| mid | 21,508 (96.8%) | 700 | 7 | 6.066 px |
+
+**Coarse meets the one-pixel bound.** Mid exceeds it on 7 of 22,215 arcs -
+which are the same seven world-space events as coarse's, about 0.0029 projected
+units or 22 km each. Mid only looks eight times worse because `PX_PER_UNIT.mid`
+makes mid's pixel eight times smaller for an identical displacement, and
+`PX_PER_UNIT` is provisional: a guess at a Phase 2 viewport that does not exist
+yet. So mid is asserted in **world units, at the coarse level's pixel size**,
+rather than pretended to pass. Phase 2 should revisit the bound once
+`PX_PER_UNIT` holds the viewer's real figures. The regression the criterion
+exists to catch - per-group simplification cracking a shared border into
+hairline gaps - remains separately gated by the noisy-shared-boundary test in
+`packages/pipeline/tests/simplify.test.ts`, verified to fail when
+simplification is rewritten to one mapshaper call per group instead of one call
+for the whole group.
+
+**A note on temporal coverage.** `docs/data-sources.md` already warns that the
+classical Mediterranean is Cliopatria's best-covered slice and that treating it
+as representative will mislead you. The change index quantifies that warning:
+of 937 distinct change years worldwide, the single densest grid cell sits over
+Europe and alone holds 855 of them - 91% - and the Mediterranean region's cell
+range captures effectively all 937. This has a direct consequence for decision
+0006's viewport-scoped playback acceleration: it will barely engage while the
+viewport sits over Europe, because there is almost always something changing
+nearby, and it will dominate everywhere else, because there mostly isn't.
 
 **A note on the antimeridian stage.** No polygon in the pinned Cliopatria
 release actually crosses 180 degrees longitude - the maximum absolute
@@ -130,11 +196,15 @@ the fixture carries no antimeridian-adjacent slice either.
 "Identical inputs produce byte-identical outputs" is an acceptance criterion,
 but taken absolutely it isn't achievable: the projection maths calls
 `Math.sin` and `Math.asin`, whose results are engine-dependent, and
-Milestone 2's mapshaper step has its own floating-point behaviour tied to its
+mapshaper's simplification has its own floating-point behaviour tied to its
 version. Decision 0010 scopes the guarantee to a **pinned toolchain** - the
-Node version in `.nvmrc` and the exact dependency versions in the lockfile.
-Bumping either is a deliberate act that ends with re-blessing the golden
-fixture artifacts and reviewing the diff.
+Node version in `.nvmrc` and the exact dependency versions in the lockfile -
+and mapshaper is now inside that scope along with everything else: its
+determinism was verified byte-identical across independent build processes
+run against the real dataset, not assumed from its own documentation.
+Bumping either the toolchain or the mapshaper version is a deliberate act
+that ends with re-blessing the golden fixture artifacts and reviewing the
+diff.
 
 Three things make this real rather than aspirational: inputs are
 checksum-pinned so "identical inputs" is verified rather than assumed; every

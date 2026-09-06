@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { COORD_SCALE, type Manifest, type VersionsArtifact } from "@history/model";
+import { COORD_SCALE, type Manifest, SCHEMA_VERSION, type VersionsArtifact } from "@history/model";
 import { readArtifact } from "@history/model/artifact";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { SourceSpec } from "../src/sources";
@@ -15,6 +15,14 @@ const source: SourceSpec = {
   url: "https://example.invalid/c.zip",
   file: "c.zip",
   sha256: "a".repeat(64),
+};
+
+const geometry = {
+  "wd:Q1@0": {
+    polygons: [[[0, 0, 10, 0, 10, 10, 0, 10, 0, 0]]],
+    bbox: [0, 0, 10, 10] as [number, number, number, number],
+    anchor: [5, 5] as [number, number],
+  },
 };
 
 function input(outDir: string) {
@@ -44,12 +52,14 @@ function input(outDir: string) {
         source: { dataset: "cliopatria" as const, version: "1.0.0" },
       },
     ],
-    geometry: {
-      "wd:Q1@0": {
-        polygons: [[[0, 0, 10, 0, 10, 10, 0, 10, 0, 0]]],
-        bbox: [0, 0, 10, 10] as [number, number, number, number],
-        anchor: [5, 5] as [number, number],
-      },
+    // The same geometry serves all three levels here: emit's job is to write
+    // each to its own file with its own stamp, not to simplify -- that is
+    // build.ts's job, covered in build.test.ts.
+    geometry: { coarse: geometry, mid: geometry, full: geometry },
+    changes: {
+      schemaVersion: SCHEMA_VERSION,
+      grid: { cols: 1, rows: 1, bounds: [0, 0, 1, 1] as [number, number, number, number] },
+      cells: [[0, 100]],
     },
     land: { coarse: [[[0, 0, 1, 0, 1, 1, 0, 0]]], mid: [[[0, 0, 2, 0, 2, 2, 0, 0]]] },
     sources: [source],
@@ -65,10 +75,13 @@ describe("emit", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("writes the Milestone 1 artifact set", () => {
+  it("writes the full artifact set", () => {
     emit(input(dir));
     for (const file of [
+      "changes.json",
       "polities.json",
+      "versions.0.json",
+      "versions.1.json",
       "versions.2.json",
       "land.0.json",
       "land.1.json",
@@ -87,6 +100,20 @@ describe("emit", () => {
     expect(artifact.geometry["wd:Q1@0"]?.anchor).toEqual([5, 5]);
   });
 
+  it("writes one versions artifact per level, each stamped with its own scale", () => {
+    emit(input(dir));
+    for (const [file, level, scale] of [
+      ["versions.0.json", "coarse", COORD_SCALE.coarse],
+      ["versions.1.json", "mid", COORD_SCALE.mid],
+      ["versions.2.json", "full", COORD_SCALE.full],
+    ] as const) {
+      const artifact = readArtifact<VersionsArtifact>(join(dir, file));
+      expect(artifact.level).toBe(level);
+      expect(artifact.coordScale).toBe(scale);
+      expect(artifact.rows).toHaveLength(1);
+    }
+  });
+
   it("names every source with its upstream version and licence", () => {
     emit(input(dir));
     const manifest = readArtifact<Manifest>(join(dir, "manifest.json"));
@@ -102,7 +129,15 @@ describe("emit", () => {
   it("records size and checksum for every artifact except the manifest itself", () => {
     const manifest = emit(input(dir));
     const files = manifest.artifacts.map((a) => a.file);
-    expect(files).toEqual(["land.0.json", "land.1.json", "polities.json", "versions.2.json"]);
+    expect(files).toEqual([
+      "changes.json",
+      "land.0.json",
+      "land.1.json",
+      "polities.json",
+      "versions.0.json",
+      "versions.1.json",
+      "versions.2.json",
+    ]);
     for (const artifact of manifest.artifacts) {
       expect(artifact.bytes).toBeGreaterThan(0);
       expect(artifact.gzipBytes).toBeGreaterThan(0);
@@ -112,7 +147,14 @@ describe("emit", () => {
 
   it("writes no wall-clock time anywhere in the output", () => {
     emit(input(dir));
-    for (const file of ["manifest.json", "polities.json", "versions.2.json"]) {
+    for (const file of [
+      "manifest.json",
+      "polities.json",
+      "versions.0.json",
+      "versions.1.json",
+      "versions.2.json",
+      "changes.json",
+    ]) {
       const raw = readFileSync(join(dir, file), "utf8");
       expect(raw).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/);
     }

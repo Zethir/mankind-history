@@ -32,10 +32,28 @@ function flatten(rings: Array<Array<[number, number]>>, scale: number): Polygon 
   });
 }
 
-export function projectPolygons(polygons: LonLatPolygon[], scale: number): VersionGeometry {
-  if (polygons.length === 0) throw new Error("projectPolygons requires at least one polygon");
-  const projected = polygons.map(projectRings);
+/** The `bbox` and `anchor` half of a VersionGeometry, over unscaled projected rings. */
+export interface BoundsAndAnchor {
+  bbox: [number, number, number, number];
+  anchor: [number, number];
+}
 
+/**
+ * Bounding box and label point for one version's projected polygons.
+ *
+ * Split out of `projectPolygons` because the coarser levels need it too and
+ * must NOT inherit full detail's: `keep-shapes` protects shapes, not parts, so
+ * simplification drops whole sub-polygons, and a rescaled full-detail bbox then
+ * claims territory the level does not draw. Measured before this was fixed,
+ * 3,090 of 13,380 coarse versions carried a bbox that did not bound their own
+ * geometry -- worst, `name:United States of America@1880` declared 3.06
+ * projected units, 56% of the world's width, of empty claim -- and eight coarse
+ * anchors fell outside their own polygons.
+ */
+export function boundsAndAnchor(
+  projected: Array<Array<Array<[number, number]>>>,
+  scale: number,
+): BoundsAndAnchor {
   let minX = Number.POSITIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
@@ -67,7 +85,6 @@ export function projectPolygons(polygons: LonLatPolygon[], scale: number): Versi
   const anchor = polylabel(largest, 1e-4);
 
   return {
-    polygons: projected.map((rings) => flatten(rings, scale)),
     bbox: [
       Math.round(minX * scale),
       Math.round(minY * scale),
@@ -75,6 +92,37 @@ export function projectPolygons(polygons: LonLatPolygon[], scale: number): Versi
       Math.round(maxY * scale),
     ],
     anchor: [Math.round((anchor[0] as number) * scale), Math.round((anchor[1] as number) * scale)],
+  };
+}
+
+/**
+ * The same measurement over polygons already stored as scaled integers, which
+ * is the form the simplified levels come back from mapshaper in. Dividing by
+ * the level's own scale and re-rounding through `boundsAndAnchor` is exact:
+ * every input is already a multiple of one scale unit.
+ */
+export function boundsAndAnchorOfScaled(polygons: Polygon[], scale: number): BoundsAndAnchor {
+  if (polygons.length === 0) {
+    throw new Error("boundsAndAnchorOfScaled requires at least one polygon");
+  }
+  const unscaled = polygons.map((polygon) =>
+    polygon.map((ring) => {
+      const points: Array<[number, number]> = new Array(ring.length / 2);
+      for (let i = 0; i < ring.length; i += 2) {
+        points[i / 2] = [(ring[i] as number) / scale, (ring[i + 1] as number) / scale];
+      }
+      return points;
+    }),
+  );
+  return boundsAndAnchor(unscaled, scale);
+}
+
+export function projectPolygons(polygons: LonLatPolygon[], scale: number): VersionGeometry {
+  if (polygons.length === 0) throw new Error("projectPolygons requires at least one polygon");
+  const projected = polygons.map(projectRings);
+  return {
+    polygons: projected.map((rings) => flatten(rings, scale)),
+    ...boundsAndAnchor(projected, scale),
   };
 }
 

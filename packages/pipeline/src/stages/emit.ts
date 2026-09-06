@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import {
+  type ChangesArtifact,
   COORD_SCALE,
   type LandArtifact,
   type Manifest,
@@ -24,7 +25,12 @@ export interface EmitInput {
   outDir: string;
   polities: Polity[];
   versions: Version[];
-  geometry: Record<string, VersionGeometry>;
+  geometry: {
+    coarse: Record<string, VersionGeometry>;
+    mid: Record<string, VersionGeometry>;
+    full: Record<string, VersionGeometry>;
+  };
+  changes: ChangesArtifact;
   land: { coarse: Polygon[]; mid: Polygon[] };
   sources: SourceSpec[];
 }
@@ -40,7 +46,7 @@ function measure(outDir: string, file: string): ManifestArtifact {
 }
 
 /**
- * Write the Milestone 1 artifact set, then the manifest that describes it.
+ * Write the artifact set, then the manifest that describes it.
  *
  * The manifest deliberately carries no build time. Provenance is the upstream
  * versions and checksums, which are properties of the inputs; a timestamp is a
@@ -72,12 +78,26 @@ export function emit(input: EmitInput): Manifest {
     schemaVersion: SCHEMA_VERSION,
     polities: input.polities,
   };
-  const versions: VersionsArtifact = {
+  const versionsCoarse: VersionsArtifact = {
+    schemaVersion: SCHEMA_VERSION,
+    level: "coarse",
+    coordScale: COORD_SCALE.coarse,
+    rows: input.versions,
+    geometry: input.geometry.coarse,
+  };
+  const versionsMid: VersionsArtifact = {
+    schemaVersion: SCHEMA_VERSION,
+    level: "mid",
+    coordScale: COORD_SCALE.mid,
+    rows: input.versions,
+    geometry: input.geometry.mid,
+  };
+  const versionsFull: VersionsArtifact = {
     schemaVersion: SCHEMA_VERSION,
     level: "full",
     coordScale: COORD_SCALE.full,
     rows: input.versions,
-    geometry: input.geometry,
+    geometry: input.geometry.full,
   };
   const landCoarse: LandArtifact = {
     schemaVersion: SCHEMA_VERSION,
@@ -93,12 +113,23 @@ export function emit(input: EmitInput): Manifest {
   };
 
   writeArtifact(join(input.outDir, "polities.json"), polities);
-  writeArtifact(join(input.outDir, "versions.2.json"), versions);
+  writeArtifact(join(input.outDir, "versions.0.json"), versionsCoarse);
+  writeArtifact(join(input.outDir, "versions.1.json"), versionsMid);
+  writeArtifact(join(input.outDir, "versions.2.json"), versionsFull);
   writeArtifact(join(input.outDir, "land.0.json"), landCoarse);
   writeArtifact(join(input.outDir, "land.1.json"), landMid);
+  writeArtifact(join(input.outDir, "changes.json"), input.changes);
 
   // Sorted so the manifest is stable regardless of write order.
-  const files = ["land.0.json", "land.1.json", "polities.json", "versions.2.json"];
+  const files = [
+    "changes.json",
+    "land.0.json",
+    "land.1.json",
+    "polities.json",
+    "versions.0.json",
+    "versions.1.json",
+    "versions.2.json",
+  ];
   const manifest: Manifest = {
     schemaVersion: SCHEMA_VERSION,
     projection: PROJECTION,

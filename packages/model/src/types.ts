@@ -99,3 +99,20 @@ export interface Manifest {
   sources: ManifestSource[];
   artifacts: ManifestArtifact[];
 }
+
+/**
+ * Change-year index. Backs decision 0006's viewport-scoped nextVisibleChange:
+ * given a year and a viewport, the next year in which anything visible starts
+ * or ends.
+ *
+ * Buckets POLYGONS, not versions -- a scattered empire's overall bounding box
+ * covers most of the world while its individual polygons do not. See
+ * docs/decisions/0013-index-buckets-polygons.md.
+ */
+export interface ChangesArtifact {
+  schemaVersion: number;
+  /** `bounds` is in unscaled projected units, so the grid is level-independent. */
+  grid: { cols: number; rows: number; bounds: [number, number, number, number] };
+  /** Row-major, cols * rows entries. Each a sorted, deduplicated year list. */
+  cells: number[][];
+}

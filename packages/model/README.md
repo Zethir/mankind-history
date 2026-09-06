@@ -64,6 +64,8 @@ polities.json     { schemaVersion, polities: Polity[] }
 versions.{n}.json { schemaVersion, level, coordScale, rows: Version[],
                      geometry: Record<versionId, VersionGeometry> }
 land.{n}.json     { schemaVersion, level, coordScale, polygons: Polygon[] }
+changes.json      { schemaVersion, grid: { cols, rows, bounds },
+                     cells: number[][] }
 manifest.json     { schemaVersion, projection, sources: ManifestSource[],
                      artifacts: ManifestArtifact[] }
 ```
@@ -73,10 +75,21 @@ projected geometry together, because the viewer loads exactly one detail
 level per zoom and wants a single fetch rather than joining two files at
 render time.
 
+`ChangesArtifact` (`changes.json`) backs decision 0006's viewport-scoped
+"when does this view next change": `cells` is a row-major grid of `GRID.cols
+* GRID.rows` sorted, deduplicated year lists, and `grid.bounds` is the
+projected-space box the grid covers, in unscaled units so the grid is
+level-independent. Each cell is populated per-**polygon**, not per-version -
+decision 0013 measures why bucketing by a version's combined bounding box
+would over-claim cells and quotes the cost of the alternative actually taken.
+
 `Polygon` is `Ring[]` (outer ring first, holes after), and a `Ring` is a flat
 array of scaled-integer coordinates: `[x0, y0, x1, y1, ...]`. `bbox` is
 `[minX, minY, maxX, maxY]`; `anchor` is a `[x, y]` label point (the polygon's
-pole of inaccessibility), for future name placement.
+pole of inaccessibility), for future name placement. Both are computed from
+**that level's own polygons**, never inherited from full detail and rescaled:
+simplification protects shapes but not parts, so it drops whole sub-polygons,
+and an inherited box would claim territory the level does not draw.
 
 ## Coordinate scaling
 
@@ -96,3 +109,28 @@ Per-level scales live in `canon.ts` (`COORD_SCALE`). Two reasons:
 `artifact.ts`'s writer throws on any non-finite number reaching an artifact,
 so a NaN or Infinity anywhere in the geometry pipeline fails the build rather
 than shipping silently.
+
+## Other shared constants (`canon.ts`)
+
+`SIMPLIFY_PERCENT` is the Visvalingam vertex-retention percentage per level
+passed to mapshaper: `{ coarse: 30, mid: 60, full: 100 }`. Chosen as the least
+aggressive value that meets the 8 MB gzipped budget on `versions.0.json` -
+which turned out not to bind at any tested percentage, since coarse's size is
+dominated by its `COORD_SCALE` (1e5) rather than by vertex count. See the long
+comment in `canon.ts` for the measured retention table.
+
+`GRID` is the change index's grid shape, `{ cols: 64, rows: 32 }`, uniform
+over projected space (so, because the projection is equal-area, uniform real
+area per cell too). Chosen for query precision rather than size: the whole
+index is 33 KB gzipped after deduplication even at this resolution.
+
+`PX_PER_UNIT` is **provisional**: screen pixels per projected unit at the
+coarsest zoom each detail level is expected to serve, used by the
+no-new-gaps acceptance criterion in `packages/pipeline/tests/acceptance.test.ts`.
+It encodes a Phase 2 viewport assumption - a 1400-pixel-wide window at each
+zoom level - that does not exist yet and should be replaced with the viewer's
+real figures once Phase 2 has them. That criterion measures border displacement
+per shared arc: coarse meets the one-pixel bound, and mid exceeds it on 7 of
+22,215 arcs which are the same world-space events at a pixel this constant
+happens to make eight times smaller - so mid is bounded in world units instead.
+See the no-new-gaps section of `docs/architecture.md`.

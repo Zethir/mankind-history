@@ -1,0 +1,15 @@
+{
+  "name": "@history/pipeline",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@history/model": "workspace:*",
+    "adm-zip": "^0.6.0",
+    "polylabel": "^2.1.0"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
+    "@types/polylabel": "^2.0.0"
+  }
+}

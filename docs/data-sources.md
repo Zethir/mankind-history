@@ -5,9 +5,36 @@ Do not add a source without recording its licence there first.
 
 ## Cliopatria — primary territorial data
 
-Seshat Global History Databank. CC-BY.
+Seshat Global History Databank. CC-BY-4.0.
 <https://github.com/Seshat-Global-History-Databank/cliopatria>
-<https://doi.org/10.5281/zenodo.13363121>
+
+**Cited as:** <https://doi.org/10.5281/zenodo.13363121> - this DOI is what
+CC-BY requires for attribution, and stays the citation regardless of which
+release is pinned.
+
+**Pinned as:** `v0.2.0`, fetched by the commit that tag names rather than by the
+tag itself, since a lightweight tag can be repointed and a commit cannot:
+`https://raw.githubusercontent.com/Seshat-Global-History-Databank/cliopatria/ad28a691b7c07c1fca89d0e0636d324667d2a258/cliopatria.geojson.zip`,
+verified by SHA-256 in `packages/pipeline/src/sources.ts`. The zip's single
+entry is `cliopatria_polities_only.geojson` - not `cliopatria.geojson`.
+
+These two are deliberately different things. The Zenodo DOI above resolves to
+a snapshot of `v0.0.1`, from August 2024 - two years and four releases behind
+the `v0.2.0` this project pins - and Zenodo mirrors every version the same
+way: as a full GitHub *source snapshot*, which contains `cliopatria.geojson.zip`
+nested inside it rather than as the archive's own top-level content. This
+pipeline's fetcher unpacks one named entry from a zip; it cannot express "a
+zip inside a snapshot inside a zip" without a second unpacking stage for a
+dataset whose whole reason for existing is to avoid exactly that kind of
+incidental complexity. The size difference makes the same point another way:
+the Zenodo source snapshot is 297 MB, against 44 MB for the direct tag URL,
+because it carries the whole repository history and tooling alongside the one
+file this project needs.
+
+So: Zenodo is where you go to cite this dataset. GitHub's tag URL is where the
+build actually gets its bytes. Bumping the pin means bumping the tag in
+`sources.ts`, not chasing a new Zenodo record - see "Refreshing" below and
+`packages/pipeline/README.md`.
 
 Roughly 14,000 records covering 1,600+ political entities, 3400 BCE to 2024 CE.
 Versioned MAJOR/MINOR/PATCH and mirrored to Zenodo.
@@ -23,6 +50,17 @@ resolution. Coverage therefore follows where atlas-makers concentrated: the
 classical Mediterranean is the best-covered slice in the dataset, and treating
 it as representative will mislead you. This is the single most important thing
 to know about this data.
+
+**One name can span states a historian would separate.** Cliopatria keys entities
+on `Name` and sometimes gives one name to what are arguably distinct polities:
+`Later Zhou` runs -750 to 960 with a 1,217-year hole in the middle, `Kingdom of
+Italy` covers both the medieval kingdom and the 1861 one, and `Georgia` spans the
+medieval kingdom and the 1918 republic. This is upstream's own modelling, not an
+artefact of our identity key - each of those carries a single Wikidata id too, so
+keying on Wikidata would merge them identically (see 0011). Only five polities
+have a gap over 500 years and only one over 1,000, and the derived `gap` field
+makes every one of them visible: decision 0004 suppresses the expansion flash
+above a 50-year gap, so none of these produce a fabricated event.
 
 `RELATION` rows encode composite and membership structure rather than plain
 territory. Currently filtered out. Rendering them is an open design question.

@@ -41,9 +41,15 @@ dist/                gitignored. Build output. Released as artifacts, not commit
 
 ## Current state
 
-Phase 0 is closed. Findings: `docs/phase-0-findings.md`.
-Phase 1 is the data spine: `docs/phase-1-importer.md`.
+Phase 0 is closed. Findings: `docs/phase-0-findings.md`. The spike is deleted;
+its conclusions live in `docs/decisions/`.
 
-The code currently in `scripts/` and `src/` is the Phase 0 spike. It is
-deliberately disposable: no schema, no validation, no tests. Do not extend it,
-and do not treat its structure as precedent.
+Phase 1 is the data spine: `docs/phase-1-importer.md` is the canonical spec,
+`docs/phase-1-design.md` the implementation design.
+
+Milestone 1 is complete - `pnpm fetch:sources && pnpm build` produces validated `dist/`
+artifacts at full detail, and every M1 acceptance criterion is a named test.
+Milestone 2 is next: topology-preserving simplification at the two coarser
+levels, and the spatially-bucketed change-year index.
+
+Start at `docs/architecture.md`.

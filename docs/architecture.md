@@ -130,21 +130,47 @@ each version to its predecessor.
 **On the no-new-gaps criterion.** `docs/phase-1-importer.md` states the
 acceptance criterion as a one-pixel gap bound: no border simplification may
 open a gap wider than one screen pixel between two polygons that shared an
-edge before simplification. What ships is narrower than that wording. A direct
-pixel-displacement measurement was attempted in six distinct formulations, and
-every one measured polygon *removal* rather than border *displacement* - a
-sub-pixel polygon that simplification drops entirely leaves no adjacent pair
-left to have a gap between, and cannot be told apart from a polygon that
-survived without a stable per-ring identity carried through mapshaper. What is
-asserted instead, in `packages/pipeline/tests/acceptance.test.ts`'s
-"simplification" suite, is that shared borders survive identically: 99.35% of
-shared edges on the fixture and 99.72-99.79% on the real dataset keep exactly
-the same simplified points on both sides. Displacement is computed and printed
-for the cases that don't, but not asserted against a pixel bound. The
-regression the pixel criterion was meant to catch is instead gated by the
-noisy-shared-boundary test in `packages/pipeline/tests/simplify.test.ts`,
-verified to fail when simplification is rewritten to one mapshaper call per
-group instead of one call for the whole group.
+edge before simplification. It is measured, in
+`packages/pipeline/tests/acceptance.test.ts`'s "simplification" suite, by
+comparing **retained subsequences of shared arcs**.
+
+Six earlier formulations failed, and they failed for one reason: each asked
+"what surviving geometry is nearest this dropped point?", a question with no
+removal-free answer, so each measured a sub-polygon being *removed* rather than
+a border *moving*. The formulation that works never looks at polygons. Every
+full-detail edge is keyed direction-independently with the set of version ids
+using it; edges with two or more users are grouped by their exact co-user set
+and chained into maximal polylines. Each polyline is a shared arc, defined
+entirely from the full data. Because mapshaper drops vertices but never
+relocates them (0 of 2,400,206 coarse vertices are absent from the rescaled
+full-detail vertex set), each side's simplified border along an arc is exactly
+the retained subsequence of that arc's own points, and the two sides compare
+directly by Hausdorff distance. Ring identity across simplification - which the
+six attempts believed was required and could not be had - turns out not to be
+needed. A side retaining fewer than two of an arc's points has dropped the arc:
+that is a removal, counted separately and not measured.
+
+Measured on the real dataset, both levels seeing the same 22,215 shared arcs
+(arcs of at least three points, so none can be trivially identical):
+
+| level | identical | one side dropped | displaced | worst |
+|---|---|---|---|---|
+| coarse | 21,058 (94.8%) | 1,150 | 7 | 0.759 px |
+| mid | 21,508 (96.8%) | 700 | 7 | 6.066 px |
+
+**Coarse meets the one-pixel bound.** Mid exceeds it on 7 of 22,215 arcs -
+which are the same seven world-space events as coarse's, about 0.0029 projected
+units or 22 km each. Mid only looks eight times worse because `PX_PER_UNIT.mid`
+makes mid's pixel eight times smaller for an identical displacement, and
+`PX_PER_UNIT` is provisional: a guess at a Phase 2 viewport that does not exist
+yet. So mid is asserted in **world units, at the coarse level's pixel size**,
+rather than pretended to pass. Phase 2 should revisit the bound once
+`PX_PER_UNIT` holds the viewer's real figures. The regression the criterion
+exists to catch - per-group simplification cracking a shared border into
+hairline gaps - remains separately gated by the noisy-shared-boundary test in
+`packages/pipeline/tests/simplify.test.ts`, verified to fail when
+simplification is rewritten to one mapshaper call per group instead of one call
+for the whole group.
 
 **A note on temporal coverage.** `docs/data-sources.md` already warns that the
 classical Mediterranean is Cliopatria's best-covered slice and that treating it

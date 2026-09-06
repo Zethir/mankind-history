@@ -1,5 +1,6 @@
 import type { ChangesArtifact } from "@history/model";
 import { equalEarth } from "@history/model";
+import { cellRangeFor } from "./change-index";
 
 /**
  * Equal Earth curves, so projecting the four corners of a lon/lat box is not
@@ -70,7 +71,11 @@ export function accelerationProfile(
   deadTimeSeconds: number,
 ): AccelerationProfile | null {
   const span = to - from;
-  if (span <= 0 || changeYears.length < 2) return null;
+  // One change year is profilable: `from -> y` and `y -> to` are two
+  // well-defined gaps, and a lone change in a long window is exactly the case
+  // adaptive playback exists for. Zero change years genuinely has nothing to
+  // profile -- there is no gap structure, only the window itself.
+  if (span <= 0 || changeYears.length === 0) return null;
 
   const threshold = deadTimeSeconds * baseSpeed;
   let acceleratedYears = 0;
@@ -100,23 +105,6 @@ export interface HistogramResult {
   buckets: HistogramBucket[];
   allChangeYears: number[];
   acceleration: AccelerationProfile | null;
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return v < lo ? lo : v > hi ? hi : v;
-}
-
-/** Inclusive cell range covering an unscaled-projected bbox, against a grid. */
-function cellRangeFor(grid: ChangesArtifact["grid"], bbox: [number, number, number, number]) {
-  const [minX, minY, maxX, maxY] = grid.bounds;
-  const w = maxX - minX;
-  const h = maxY - minY;
-  return {
-    x0: clamp(Math.floor(((bbox[0] - minX) / w) * grid.cols), 0, grid.cols - 1),
-    x1: clamp(Math.floor(((bbox[2] - minX) / w) * grid.cols), 0, grid.cols - 1),
-    y0: clamp(Math.floor(((bbox[1] - minY) / h) * grid.rows), 0, grid.rows - 1),
-    y1: clamp(Math.floor(((bbox[3] - minY) / h) * grid.rows), 0, grid.rows - 1),
-  };
 }
 
 /**

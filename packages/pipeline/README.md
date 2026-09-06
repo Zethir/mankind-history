@@ -103,9 +103,8 @@ of another change:
 2. Run `pnpm fetch:sources -- --write-pins`. It downloads the new file,
    computes its checksum, and prints a `sources.ts` block to paste back in.
 3. Paste the printed `sha256` back into `sources.ts` and commit.
-4. Re-run `pnpm build`, re-run the acceptance tests, and - once Milestone 2
-   exists - diff the change-year index, since a change in upstream sampling
-   changes playback feel.
+4. Re-run `pnpm build`, re-run the acceptance tests, and diff `changes.json`,
+   since a change in upstream sampling changes playback feel.
 5. Regenerate fixtures deliberately: `pnpm extract-fixture` then
    `pnpm fixture:bless`, and review the diff in `fixtures/` and
    `fixtures/dist/` before committing. See `docs/data-sources.md` and

@@ -18,6 +18,28 @@ function option(name: string, fallback: string): string {
   return hit ? hit.slice(name.length + 3) : fallback;
 }
 
+/**
+ * A numeric flag, validated. `Number("")` is 0 and `Number("x")` is NaN, so an
+ * unvalidated flag turns a typo into a divide-by-zero (`--bucket=0` bucketing
+ * every year into `Infinity`) or a chart of NaNs. docs/standards.md: fail, do
+ * not warn.
+ */
+function numberOption(name: string, fallback: string, mustBePositive = false): number {
+  const raw = option(name, fallback);
+  const value = Number(raw);
+  // `Number("")` and `Number("  ")` are both 0, so a flag left empty by a
+  // shell-quoting slip would otherwise pass as a deliberate zero.
+  if (raw.trim() === "" || !Number.isFinite(value)) {
+    console.error(`  --${name} must be a finite number, got "${raw}".`);
+    process.exit(1);
+  }
+  if (mustBePositive && value <= 0) {
+    console.error(`  --${name} must be greater than zero, got "${raw}".`);
+    process.exit(1);
+  }
+  return value;
+}
+
 async function runFetch(): Promise<void> {
   const outDir = option("sources", "data/sources");
   const writePins = flag("write-pins");
@@ -171,14 +193,14 @@ function printAcceleration(result: HistogramResult, speed: number, deadtime: num
 
 function runHistogram(): void {
   const distDir = option("dist", "dist");
-  const bucket = Number(option("bucket", "100"));
-  const speed = Number(option("speed", "4"));
-  const deadtime = Number(option("deadtime", "7"));
+  const bucket = numberOption("bucket", "100", true);
+  const speed = numberOption("speed", "4", true);
+  const deadtime = numberOption("deadtime", "7");
   const era = resolveEra(option("era", "all"));
   const from = process.argv.some((a) => a.startsWith("--from="))
-    ? Number(option("from", "0"))
+    ? numberOption("from", "0")
     : era.from;
-  const to = process.argv.some((a) => a.startsWith("--to=")) ? Number(option("to", "0")) : era.to;
+  const to = process.argv.some((a) => a.startsWith("--to=")) ? numberOption("to", "0") : era.to;
 
   const changes = readArtifact<ChangesArtifact>(join(distDir, "changes.json"));
 

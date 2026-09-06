@@ -13,7 +13,7 @@ import {
   normaliseCliopatria,
   normaliseLand,
 } from "./stages/normalise";
-import { projectLand, projectPolygons } from "./stages/project";
+import { boundsAndAnchorOfScaled, projectLand, projectPolygons } from "./stages/project";
 import { simplifyPolygonGroups } from "./stages/simplify";
 
 export interface BuildOptions {
@@ -109,8 +109,18 @@ export async function build(options: BuildOptions): Promise<BuildReport> {
     const simplified = await simplifyPolygonGroups(groups, SIMPLIFY_PERCENT[level]);
     const scale = COORD_SCALE[level];
     for (const version of versions) {
-      const source = geometry[version.id] as VersionGeometry;
-      const polygons = (simplified.get(version.id) ?? source.polygons).map((polygon) =>
+      // Silently falling back to full-detail geometry here would ship
+      // unsimplified rings inside a coarse artifact -- a level that lies about
+      // its own detail, which nothing downstream could detect. If mapshaper
+      // ever omits an id, that is a bug in this stage, so fail the build.
+      const simplifiedPolygons = simplified.get(version.id);
+      if (!simplifiedPolygons) {
+        throw new Error(
+          `mapshaper returned no ${level} geometry for version "${version.id}". ` +
+            `Every version must come back from every level.`,
+        );
+      }
+      const polygons = simplifiedPolygons.map((polygon) =>
         polygon.map((ring) => {
           const out: number[] = new Array(ring.length);
           for (let i = 0; i < ring.length; i++) {
@@ -121,11 +131,14 @@ export async function build(options: BuildOptions): Promise<BuildReport> {
       );
       for (const polygon of polygons)
         for (const ring of polygon) levelStats[level].vertices += ring.length / 2;
-      const rescale = (v: number) => Math.round((v / COORD_SCALE.full) * scale);
+      // Recomputed from THIS level's polygons, never rescaled from full
+      // detail. `keep-shapes` protects shapes, not parts, so simplification
+      // drops whole sub-polygons; an inherited bbox would then bound geometry
+      // this level does not contain, and an inherited anchor could sit outside
+      // it. See boundsAndAnchor in stages/project.ts for the measured damage.
       levels[level][version.id] = {
         polygons,
-        bbox: source.bbox.map(rescale) as [number, number, number, number],
-        anchor: source.anchor.map(rescale) as [number, number],
+        ...boundsAndAnchorOfScaled(polygons, scale),
       };
     }
   }

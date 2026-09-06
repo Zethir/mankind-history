@@ -34,7 +34,21 @@ describe("accelerationProfile", () => {
   });
 
   it("returns null when there is nothing to profile", () => {
+    // Zero change years genuinely has no gap structure to profile -- only the
+    // window itself. One change year does: see the case below.
     expect(accelerationProfile([], 0, 100, 4, 7)).toBeNull();
+  });
+
+  it("profiles a single change year, which is two gaps and not nothing", () => {
+    // from -> y and y -> to are both well defined. At 4 yr/s with a 7s
+    // ceiling, 28 years are coverable: the 50-year gap either side of year 50
+    // contributes 22 accelerated years each, 44 of a 100-year span.
+    const p = accelerationProfile([50], 0, 100, 4, 7);
+    expect(p).not.toBeNull();
+    expect(p?.totalGaps).toBe(2);
+    expect(p?.acceleratedGaps).toBe(2);
+    expect(p?.longestGap).toBe(50);
+    expect(p?.fraction).toBeCloseTo(44 / 100, 6);
   });
 });
 

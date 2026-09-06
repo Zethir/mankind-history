@@ -1,7 +1,14 @@
-import { COORD_SCALE, GRID, type Version, type VersionGeometry } from "@history/model";
+import {
+  type ChangesArtifact,
+  COORD_SCALE,
+  GRID,
+  type Version,
+  type VersionGeometry,
+} from "@history/model";
 import { describe, expect, it } from "vitest";
 import {
   buildChangeIndex,
+  cellRangeFor,
   nextChangeAfter,
   nextChangeBruteForce,
   polygonBbox,
@@ -109,13 +116,78 @@ describe("nextChangeAfter", () => {
   });
 
   it("agrees with a brute-force scan over random queries", () => {
+    // Seeded, like the 1,000-query acceptance run: an unseeded Math.random()
+    // makes a failure here unreproducible, which is the one thing a
+    // randomised equivalence test cannot afford.
+    let seed = 20260904;
+    const rand = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    };
     for (let i = 0; i < 200; i++) {
-      const year = Math.round(Math.random() * 1200 - 100);
-      const x = Math.random() * 4 - 2;
-      const y = Math.random() * 2 - 1;
+      const year = Math.round(rand() * 1200 - 100);
+      const x = rand() * 4 - 2;
+      const y = rand() * 2 - 1;
       const box: [number, number, number, number] = [x, y, x + 0.5, y + 0.5];
       expect(nextChangeAfter(index, year, box)).toBe(
-        nextChangeBruteForce(versions, geometry, S, year, box),
+        nextChangeBruteForce(index.grid, versions, geometry, S, year, box),
+      );
+    }
+  });
+
+  it("queries an artifact whose grid differs from the GRID constant, using the artifact's own", () => {
+    // The artifact carries `grid` so a consumer can use it standalone, and a
+    // released changes.json keeps the grid it was built with. Reading the
+    // shape from the constant while indexing cells by the artifact's `cols`
+    // would silently address the wrong cells the moment the two diverge -- so
+    // this queries an artifact deliberately built on a different grid.
+    const finer: ChangesArtifact["grid"] = {
+      cols: GRID.cols * 2,
+      rows: GRID.rows * 2,
+      bounds: [...index.grid.bounds] as [number, number, number, number],
+    };
+    expect(finer.cols).not.toBe(GRID.cols);
+
+    const rebuilt: ChangesArtifact = {
+      schemaVersion: index.schemaVersion,
+      grid: finer,
+      cells: Array.from({ length: finer.cols * finer.rows }, () => [] as number[]),
+    };
+    // Re-bucket the same versions against the finer grid by hand, so the only
+    // thing under test is whether the query honours the grid it is handed.
+    for (const v of versions) {
+      const g = geometry[v.id as "a" | "b"];
+      for (const polygon of g.polygons) {
+        const bb = polygonBbox(polygon);
+        const r = cellRangeFor(finer, [bb[0] / S, bb[1] / S, bb[2] / S, bb[3] / S]);
+        for (let y = r.y0; y <= r.y1; y++) {
+          for (let x = r.x0; x <= r.x1; x++) {
+            const cell = rebuilt.cells[y * finer.cols + x] as number[];
+            for (const year of [v.fromYear, v.toYear]) if (!cell.includes(year)) cell.push(year);
+            cell.sort((p, q) => p - q);
+          }
+        }
+      }
+    }
+
+    expect(nextChangeAfter(rebuilt, 0, [-0.1, -0.1, 0.3, 0.3])).toBe(100);
+    expect(nextChangeAfter(rebuilt, 100, [-0.1, -0.1, 0.3, 0.3])).toBe(200);
+    expect(nextChangeAfter(rebuilt, 200, [-0.1, -0.1, 0.3, 0.3])).toBe(900);
+    expect(nextChangeAfter(rebuilt, 5000, [-0.1, -0.1, 0.3, 0.3])).toBeNull();
+    expect(nextChangeAfter(rebuilt, 0, [2.0, 1.0, 2.2, 1.2])).toBeNull();
+
+    let seed = 990117;
+    const rand = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    };
+    for (let i = 0; i < 200; i++) {
+      const year = Math.round(rand() * 1200 - 100);
+      const x = rand() * 4 - 2;
+      const y = rand() * 2 - 1;
+      const box: [number, number, number, number] = [x, y, x + 0.5, y + 0.5];
+      expect(nextChangeAfter(rebuilt, year, box)).toBe(
+        nextChangeBruteForce(finer, versions, geometry, S, year, box),
       );
     }
   });

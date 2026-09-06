@@ -10,6 +10,13 @@ document disagree, it wins on *what* and this one wins on *how*.
 
 ## Scope
 
+> The Milestone 2 implementation plan lived at `docs/phase-1-milestone-2-plan.md`
+> and was removed once the milestone landed, the same as Milestone 1's: its
+> content is absorbed by the code, the tests, decision record 0013 and this
+> document, and stale code snippets are worse than none. Recover it with
+> `git show 42cd3aa2e6ec8c9698ad553b1d413e2a39c4d1a6:docs/phase-1-milestone-2-plan.md`.
+
+
 Four things, shipping together:
 
 1. **Simplification** — `versions.1.json` (mid) and `versions.0.json` (coarse),

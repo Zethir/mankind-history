@@ -170,14 +170,22 @@ makes the rest testable, and it is worth enforcing in review.
 Built once from `versions.0.json`. Given a fractional year, returns the versions
 that should be on screen and each one's alpha.
 
-A version is visible over `[fromYear - fadeIn, toYear + 1 + fadeOut]`. The
-fade-out sits **after** `toYear`, never before it: per 0001, the polity genuinely
-existed up to `toYear`, so a dissolve beforehand would assert a recession the
-data does not claim.
+A version is visible over `[fromYear, toYear + 1 + fadeYears]`. Both fades sit
+**inside or after** the claim, never before it. 0001 states the rule for the
+fade-out -- the polity genuinely existed up to `toYear`, so a dissolve
+beforehand would assert a recession the data does not claim -- and the same
+argument applies in the other direction, so the fade-**in** begins at `fromYear`
+rather than ramping up ahead of it.
 
-Alpha ramps 0 -> 1 across the fade-in, holds at 1, ramps 1 -> 0 across the
-fade-out. Fade width per version is the amended formula above, computed each
-frame from the current speed.
+This still produces a true crossfade. Version A's fade-out occupies
+`[toYear_A + 1, toYear_A + 1 + fadeYears]`, and its successor's `fromYear` is
+`toYear_A + 1`, so B's fade-in overlaps A's fade-out exactly. The difference is
+that only **one** of the two is ever shown outside its own claim -- A, which
+0001 explicitly admits as a transition artifact -- instead of both.
+
+Alpha ramps 0 -> 1 over `[fromYear, fromYear + fadeYears]`, holds at 1 until
+`toYear + 1`, then ramps 1 -> 0 over `[toYear + 1, toYear + 1 + fadeYears]`.
+Because `fadeYears` is capped at half the extent, alpha always reaches 1.
 
 Implemented as a linear scan over all rows, for the reasons measured above.
 
@@ -384,31 +392,41 @@ synthetic rows are needed to reach any suppression rule.
 
 **Timeline**
 
-13. For every year in the fixture's range, the active set equals a brute-force
-    filter over all rows. (Same cross-check pattern as the pipeline's
-    `nextChangeBruteForce`.)
+13. Every version whose claim interval contains the queried year is present in
+    the active set at alpha 1, and every returned alpha lies in `(0, 1]`.
+14. For every integer year in the fixture's range, at least one version is
+    returned at full alpha -- no year renders as an empty plate.
+
+    These two replace an earlier formulation that cross-checked the active set
+    against a brute-force filter. That would have been vacuous: the
+    implementation *is* a linear scan, so brute force is not an independent
+    oracle -- unlike the pipeline's `nextChangeBruteForce`, which checked a grid
+    index against a genuinely different method. Milestone 2 shipped one vacuous
+    test of exactly this shape before it was caught. Stating the criterion
+    against the raw claim interval, which the fade logic never consults, keeps
+    the oracle independent.
 
 **Change index**
 
-14. Collapsing the fixture's index years yields only years at which a version
+15. Collapsing the fixture's index years yields only years at which a version
     starts or ends, and `nextChangeAfter(y)` never returns a year `<= y`.
 
 **Render, pure parts**
 
-15. The world-to-screen transform round-trips a coordinate to within one pixel.
-16. Palette assignment is stable: the same polity id yields the same colour
+16. The world-to-screen transform round-trips a coordinate to within one pixel.
+17. Palette assignment is stable: the same polity id yields the same colour
     across runs, and across every version of that polity.
 
 **Contract**
 
-17. The viewer refuses to start on an unrecognised `schemaVersion`.
-18. Frame snapshots: the engine's `Frame` output at a fixed set of years matches
+18. The viewer refuses to start on an unrecognised `schemaVersion`.
+19. Frame snapshots: the engine's `Frame` output at a fixed set of years matches
     committed expectations.
 
 **Milestone exit condition, not a test**
 
-19. Deployed to a public URL, serving app and data from one commit.
-20. The project owner watches it and judges two things Phase 0 could not: does
+20. Deployed to a public URL, serving app and data from one commit.
+21. The project owner watches it and judges two things Phase 0 could not: does
     adaptive playback feel right, and does the 16-hue palette hold up at real
     density. Both are permitted to change the design; that is why this milestone
     is first.

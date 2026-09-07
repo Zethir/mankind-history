@@ -1,6 +1,6 @@
 # @history/viewer
 
-The viewer: loads `dist/`'s coarse artifacts, plays territorial history back
+The viewer: loads the coarse build artifacts, plays territorial history back
 on a canvas, and provides the chrome (play/pause, scrub, speed) around it.
 Depends on `@history/model` for types and the Equal Earth helpers, and on the
 staged data described below. Never depends on `packages/pipeline` (decision

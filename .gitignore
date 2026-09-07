@@ -6,3 +6,5 @@ coverage/
 *.tsbuildinfo
 .DS_Store
 .claude/worktrees/
+packages/viewer/public-data/
+packages/viewer/dist-app/

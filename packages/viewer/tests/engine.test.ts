@@ -40,10 +40,12 @@ describe("Engine", () => {
     // Roman Republic rows) to 407 (start of the Visigoths/Western Roman
     // Empire rows), so year 0 genuinely has zero active versions -- correct
     // per "missing coverage renders as absence", but useless for asserting
-    // that seek() surfaces data. -400 sits mid-interval in the Roman Republic
-    // row (-480 to -338), well clear of its fade-in/out edges.
-    const frame = engine.seek(-400);
-    expect(frame.year).toBe(-400);
+    // that seek() surfaces data. Do not "restore" it. -322 is a frame swept
+    // and confirmed rich: 2 active versions, both mid-fade, both flashing --
+    // so `draws.length > 0` here is backed by a frame known to carry real
+    // content, not merely a frame that happens to be non-empty.
+    const frame = engine.seek(-322);
+    expect(frame.year).toBe(-322);
     expect(frame.draws.length).toBeGreaterThan(0);
   });
 
@@ -87,9 +89,31 @@ describe("Engine", () => {
   // Acceptance criterion 19. The engine is DOM-free, so its whole behaviour is
   // snapshot-testable without a canvas. Snapshots are committed; a diff here
   // means playback changed, which is sometimes intended and never silent.
+  //
+  // The brief's original six years (-500, 0, 500, 1000, 1500, 2000) were a
+  // rubber stamp against this fixture: four of the six land in genuine data
+  // gaps and produce empty frames, and the other two both pin a single
+  // version sitting at a flat alpha-1 hold -- so nothing in that set could
+  // ever have caught a broken fade ramp, a broken flash envelope, or a wrong
+  // active set. These six were instead chosen by sweeping every covered year
+  // in the fixture and picking for actual behaviour exercised:
+  //   -649:    3 active, 2 mid-fade, 1 flashing -- fade + flash, sparse region
+  //   -322:    2 active, 2 mid-fade, 2 flashing -- the only frame with two
+  //            simultaneous flashes
+  //   410.5:   4 active, 4 mid-fade, 1 flashing -- busiest frame, every
+  //            version mid-fade (fractional year: this fixture's integer
+  //            years tend to land on hold plateaus, so the ramp only shows
+  //            between them)
+  //   764:     4 active, 4 mid-fade, 1 flashing -- second busiest, all mid-fade
+  //   1938.5:  4 active, 2 mid-fade, 1 flashing -- modern, mixed full and
+  //            partial alpha
+  //   1000:    0 active -- kept deliberately empty. The project's
+  //            non-negotiable is that gaps render as gaps rather than being
+  //            papered over, so one frame pinning "the engine returns nothing
+  //            where the data says nothing" belongs in this set on purpose.
   it("produces stable frames at fixed years", () => {
     const engine = new Engine(artifact);
-    for (const year of [-500, 0, 500, 1000, 1500, 2000]) {
+    for (const year of [-649, -322, 410.5, 764, 1938.5, 1000]) {
       const frame = engine.seek(year);
       const summary = {
         year: frame.year,

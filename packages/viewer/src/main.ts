@@ -31,14 +31,36 @@ async function start(): Promise<void> {
 
   window.addEventListener("resize", () => renderer.resize());
 
+  // A throw from advance/draw/update must not silently freeze the loop at
+  // whatever frame was last drawn: re-arming happens in `finally` so a single
+  // bad frame is survived. But re-arming unconditionally would spin at 60fps
+  // logging the same exception forever if the failure is not transient, so a
+  // short run of consecutive failures stops the loop and leaves a visible
+  // message instead. Five is arbitrary: enough to not abort on one glitchy
+  // frame, few enough not to spam the console for a second before giving up.
+  const MAX_CONSECUTIVE_FAILURES = 5;
   let last = performance.now();
+  let consecutiveFailures = 0;
+  let stopped = false;
   const loop = (now: number): void => {
-    const dt = Math.min((now - last) / 1000, 0.1);
-    last = now;
-    const frame = engine.advance(dt);
-    renderer.draw(frame);
-    chrome.update(frame);
-    requestAnimationFrame(loop);
+    try {
+      const dt = Math.min((now - last) / 1000, 0.1);
+      last = now;
+      const frame = engine.advance(dt);
+      renderer.draw(frame);
+      chrome.update(frame);
+      consecutiveFailures = 0;
+    } catch (error) {
+      consecutiveFailures += 1;
+      console.error("history map: frame failed", error);
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        stopped = true;
+        const message = `The map stopped after repeated rendering errors: ${String(error)}`;
+        app.innerHTML = `<p class="error">${message}</p>`;
+      }
+    } finally {
+      if (!stopped) requestAnimationFrame(loop);
+    }
   };
   requestAnimationFrame(loop);
 }

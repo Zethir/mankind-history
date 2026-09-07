@@ -23,8 +23,8 @@ was first written as two phases: a fast stretch sized to finish in
 cover the remaining distance in a fixed time but recomputes every frame as
 that distance shrinks, so it decays exponentially and never finishes on
 schedule. Simulated at 120 Hz with `D = 7` and `DECEL_SECONDS = 1.5`, it takes
-**20.72 s** to cross this dataset's largest gap of 300 years, and 10.75 s to
-cross 50.
+**20.72 s** to cross this dataset's largest gap of 300 years - roughly three
+times the ceiling it was sized against - and 10.75 s to cross 50.
 
 ## Decision
 

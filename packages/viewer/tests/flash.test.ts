@@ -29,6 +29,17 @@ describe("flashStrengthFor", () => {
     const real = rows.filter((r) => r.prevId === null);
     expect(real.length).toBeGreaterThan(0);
     for (const r of real) expect(flashStrengthFor(r)).toBe(0);
+
+    // The pipeline (lineage.ts) never emits prevId: null alongside a non-null
+    // delta -- a first appearance always has delta: null too, which means the
+    // case above cannot tell the prevId guard apart from the delta guard: if
+    // the prevId check in flash.ts were deleted, the delta === null check
+    // would independently zero out every one of those same rows and this
+    // test would keep passing. This case forces prevId: null with a non-null
+    // delta and gap -- a state real data never produces -- specifically to
+    // isolate the prevId guard. Do not delete it as "unreachable": it is the
+    // only assertion that would notice if that guard were removed.
+    expect(flashStrengthFor(version({ prevId: null, delta: 50, gap: 10 }))).toBe(0);
   });
 
   // Acceptance criterion 10. A gap that long is not attributable to a datable
@@ -78,6 +89,13 @@ describe("flashEnvelope", () => {
   it("peaks as the version reaches full opacity and is gone afterwards", () => {
     expect(flashEnvelope(100, 100, 1.6)).toBe(0);
     expect(flashEnvelope(101.6, 100, 1.6)).toBeCloseTo(1, 10);
+    // Midway through the decay (decay width = fadeYears * 2 = 3.2), the
+    // envelope should read 0.5. This point sits strictly between the ramp
+    // peak (1.6) and the true cutoff (4.8), so it pins the "twice the fade
+    // width" decay coefficient: a decay of fadeYears * 1.2 would read ~0.167
+    // here instead, and a decay of fadeYears * 1 would already be at cutoff
+    // and read 0. The endpoint samples below cannot tell those apart.
+    expect(flashEnvelope(103.2, 100, 1.6)).toBeCloseTo(0.5, 10);
     expect(flashEnvelope(104.8, 100, 1.6)).toBeCloseTo(0, 10);
     expect(flashEnvelope(110, 100, 1.6)).toBe(0);
     expect(flashEnvelope(99, 100, 1.6)).toBe(0);

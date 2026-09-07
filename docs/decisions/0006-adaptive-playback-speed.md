@@ -2,6 +2,8 @@
 
 **Status:** accepted; D not yet tuned against real data
 
+Amended by 0014 (Auto position replaces floor semantics; fade formula corrected).
+
 ## Context
 
 Crossfade needs change events to have anything to animate. Sparse regions and

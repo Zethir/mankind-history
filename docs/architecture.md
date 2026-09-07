@@ -22,7 +22,7 @@ viewer) only starts once it holds.
 packages/
   model/      canonical types + Equal Earth projection + artifact contract
   pipeline/   the build. Depends on model.
-  viewer/     Phase 2. Will depend on model (types) and dist/ (data),
+  viewer/     the viewer. Depends on model (types) and dist/ (data),
               never on pipeline.
 ```
 
@@ -36,6 +36,52 @@ Nx's `@nx/enforce-module-boundaries` would make it mechanical, but at three
 packages the config and migration cost was judged not worth it yet (0009).
 If the viewer ever imports pipeline code and nobody notices in review, that
 is the signal to revisit.
+
+## The engine/renderer split, and why the engine is DOM-free
+
+Inside `viewer/`, `src/engine/` computes what year it is, which versions are
+active, and at what opacity and flash - and never touches `HTMLElement`,
+`document`, `window`, or the canvas. `src/render/` reads that output and
+turns it into `Path2D` calls; `src/ui/` is the chrome (play/pause, scrub,
+speed) around both. The engine can be driven from a test with a fake clock
+tick and no browser at all.
+
+The reason is not general hygiene. Three of this project's decisions -
+0001 (crossfade, never geometry morphing), 0004 (the expansion flash
+suppresses itself across sampling gaps it cannot attribute), and 0006
+(playback speed adapts to change density) - are invariants the project holds
+itself to, not incidental behaviour. A DOM-dependent engine can only have
+those invariants checked by eye, in a running browser, by someone watching
+for a frame that morphed, flashed on a gap, or paced wrong. A DOM-free engine
+makes each one a named unit test against plain numbers instead:
+`tests/fade.test.ts`, `tests/flash.test.ts` and `tests/clock.test.ts` assert
+them directly. Acceptance criterion 19 is the DOM-free property itself:
+because the engine touches no DOM, `tests/engine.test.ts` can snapshot its
+whole behaviour - active set, alpha, flash - across a swept set of years with
+no canvas or browser involved, and commit the snapshots so a future change
+that alters playback shows up as a diff there rather than as something
+someone had to notice on screen.
+
+Two figures from this split, both measured on the real dataset rather than
+guessed:
+
+- **Worst-case frame cost.** The coarse level's worst year (2014) draws 195
+  active versions and 19,729 vertices - under 20,000 vertices even at the
+  single densest moment in 5,424 years of coverage. That measurement is why
+  `MapRenderer` does no render caching beyond memoizing each version's
+  `Path2D` for its lifetime: see decision 0015 for the full distribution
+  (median, p95, worst) and the reasoning.
+- **`viewport.scale`.** `fitWorld` in `src/render/transform.ts` computes the
+  real screen-pixels-per-projected-unit figure at whatever size the canvas
+  actually is. At a 1400x900 viewport it measures 258.6 px per projected
+  unit - the real number Milestone 2 uses to replace the provisional
+  `PX_PER_UNIT` constants in `packages/model/src/canon.ts`, which were a
+  guess made before any viewport existed.
+
+Neither figure says anything about whether the playback feel or the 16-hue
+palette hold up at that density - a human has not yet watched the map run
+against the real dataset, and that judgement is Milestone 1's exit
+condition, not something this document can assert on its behalf.
 
 ## The canonical model
 

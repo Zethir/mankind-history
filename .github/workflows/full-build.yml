@@ -37,6 +37,29 @@ jobs:
               process.exit(1);
             }
           "
+      - name: Every year renders something (acceptance criterion 14)
+        run: |
+          node -e "
+            const rows = require('./dist/versions.0.json').rows;
+            const FADE = 0.4 * 4;
+            const lo = Math.min(...rows.map((r) => r.fromYear));
+            const hi = Math.max(...rows.map((r) => r.toYear));
+            const empty = [];
+            for (let y = lo; y <= hi; y++) {
+              const t = y + 0.5;
+              let live = false;
+              for (const r of rows) {
+                const fade = Math.min(FADE, (r.toYear - r.fromYear + 1) / 2);
+                if (t >= r.fromYear && t < r.toYear + 1 + fade) { live = true; break; }
+              }
+              if (!live) empty.push(y);
+            }
+            if (empty.length) {
+              console.error('years with nothing on screen:', empty.length, empty.slice(0, 20));
+              process.exit(1);
+            }
+            console.log('every year from ' + lo + ' to ' + hi + ' renders at least one version');
+          "
       - uses: actions/upload-artifact@v4
         with:
           name: dist

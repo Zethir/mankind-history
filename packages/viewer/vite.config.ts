@@ -10,6 +10,11 @@ import { defineConfig } from "vite";
  * output.
  */
 export default defineConfig({
+  // The site is served from https://<user>.github.io/mankind-history/, a
+  // subpath, not the origin root. fetchArtifacts already defaults to a
+  // relative base ("."), which resolves correctly under a subpath; this is
+  // what makes Vite emit the same subpath into index.html's asset links.
+  base: "/mankind-history/",
   publicDir: resolve(import.meta.dirname, "public-data"),
   build: { outDir: "dist-app", emptyOutDir: true },
 });

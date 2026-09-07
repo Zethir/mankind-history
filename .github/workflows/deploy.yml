@@ -1,0 +1,51 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # The pinned sources are ~46 MB and change only when sources.ts does,
+      # so this keeps the download off every deploy.
+      - name: Cache the downloaded sources
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: sources-${{ hashFiles('packages/pipeline/src/sources.ts') }}
+
+      - run: pnpm fetch:sources
+      - run: pnpm build
+      # Vite's publicDir points at dist/, so this copies the artifacts into the
+      # site: the app and its data always ship from one commit.
+      - run: pnpm --filter @history/viewer build
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/viewer/dist-app
+      - id: deployment
+        uses: actions/deploy-pages@v4

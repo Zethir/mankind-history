@@ -40,7 +40,14 @@ release (1,583 polities, 13,380 versions):
 | `changes.json` | change-year index | 33 KB |
 | `manifest.json` | provenance | - |
 
-Phase 2, the viewer, has not started.
+Phase 2, Milestone 1 ships the viewer: a DOM-free playback engine, a canvas
+renderer, and the chrome (play/pause, scrub, speed) around them, all built
+against `versions.0.json`. Deployment to GitHub Pages is wired - see
+`.github/workflows/deploy.yml` - but has not yet run, so there is no live URL
+to link here. The milestone's exit condition is a human watching the result
+and judging whether adaptive playback and the palette hold up at real
+density; that judgement is still outstanding. See `docs/architecture.md` and
+`packages/viewer/README.md`.
 
 ## Quickstart
 
@@ -50,6 +57,7 @@ pnpm install
 pnpm fetch:sources     # downloads and checksum-verifies the pinned sources into data/
 pnpm build             # writes dist/
 pnpm test
+pnpm dev               # runs the viewer against dist/ (or the fixture, if dist/ is absent)
 ```
 
 `pnpm fetch:sources` downloads about 46 MB once, 165 MB after unpacking.
@@ -63,7 +71,7 @@ packages/
   model/      canonical types, Equal Earth projection, artifact contract
   pipeline/   fetch, build, extract-fixture and histogram commands. Depends
               on model.
-  viewer/     Phase 2. Will depend on model (types) and dist/ (data), never
+  viewer/     the viewer. Depends on model (types) and dist/ (data), never
               on pipeline.
 docs/         specs and decision records
 fixtures/     small committed real slice, for tests and first run

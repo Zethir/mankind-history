@@ -1,0 +1,65 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Engine > produces stable frames at fixed years > year -500 1`] = `
+{
+  "count": 1,
+  "draws": [
+    "name:Roman Kingdom@-700 a=1.0000 f=0.0000",
+  ],
+  "mode": "auto",
+  "speed": 4,
+  "year": -500,
+}
+`;
+
+exports[`Engine > produces stable frames at fixed years > year 0 1`] = `
+{
+  "count": 0,
+  "draws": [],
+  "mode": "auto",
+  "speed": 4,
+  "year": 0,
+}
+`;
+
+exports[`Engine > produces stable frames at fixed years > year 500 1`] = `
+{
+  "count": 0,
+  "draws": [],
+  "mode": "auto",
+  "speed": 4,
+  "year": 500,
+}
+`;
+
+exports[`Engine > produces stable frames at fixed years > year 1000 1`] = `
+{
+  "count": 0,
+  "draws": [],
+  "mode": "auto",
+  "speed": 4,
+  "year": 1000,
+}
+`;
+
+exports[`Engine > produces stable frames at fixed years > year 1500 1`] = `
+{
+  "count": 0,
+  "draws": [],
+  "mode": "auto",
+  "speed": 4,
+  "year": 1500,
+}
+`;
+
+exports[`Engine > produces stable frames at fixed years > year 2000 1`] = `
+{
+  "count": 1,
+  "draws": [
+    "name:Republic of Italy@1976 a=1.0000 f=0.0000",
+  ],
+  "mode": "auto",
+  "speed": 4,
+  "year": 2000,
+}
+`;

@@ -36,6 +36,39 @@ describe("transform", () => {
     expect(north).toBeLessThan(south);
   });
 
+  // Pins fitWorld's scale to the exact intended minimum, computed from the
+  // model constants (not a hardcoded number) so this survives a constants
+  // change but still fails a spurious factor error such as scaling by
+  // WORLD_HALF_WIDTH * 4 instead of * 2.
+  it("picks the exact minimum scale that fits both dimensions", () => {
+    const expected = Math.min(1400 / (WORLD_HALF_WIDTH * 2), 700 / (WORLD_HALF_HEIGHT * 2));
+    expect(view.scale).toBeCloseTo(expected, 9);
+  });
+
+  // A 1400x700 canvas against a world 2.054:1 wide is width-bound: the fitted
+  // world's left/right edges must touch the canvas edges, not merely fall
+  // short of overflowing them. Containment alone (the previous test) would
+  // pass even if the scale were silently halved.
+  it("touches the left and right edges when width-bound", () => {
+    const s = COORD_SCALE.coarse;
+    const [left] = toScreen(view, -WORLD_HALF_WIDTH * s, 0, s);
+    const [right] = toScreen(view, WORLD_HALF_WIDTH * s, 0, s);
+    expect(left).toBeCloseTo(0, 6);
+    expect(right).toBeCloseTo(1400, 6);
+  });
+
+  // Same check in the other orientation, so the Math.min in fitWorld is
+  // pinned on both branches: a canvas short enough to be height-bound must
+  // have its top/bottom edges touch, which a width-bound-only test can't see.
+  it("touches the top and bottom edges when height-bound", () => {
+    const shortView = fitWorld(1400, 400);
+    const s = COORD_SCALE.coarse;
+    const [, top] = toScreen(shortView, 0, WORLD_HALF_HEIGHT * s, s);
+    const [, bottom] = toScreen(shortView, 0, -WORLD_HALF_HEIGHT * s, s);
+    expect(top).toBeCloseTo(0, 6);
+    expect(bottom).toBeCloseTo(400, 6);
+  });
+
   // Acceptance criterion 16.
   it("round-trips a coordinate to within one pixel", () => {
     const s = COORD_SCALE.coarse;

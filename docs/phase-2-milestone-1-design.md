@@ -137,7 +137,7 @@ what `D` exists to cap.
 - 5,697 versions (42.6%) are flash-eligible under 0004's rules. The flash is a
   common path, not an edge case.
 - M1's payload: `versions.0.json` (3.02 MB gzipped, **35.3 MB uncompressed**),
-  `changes.json` (33 KB), `polities.json` (45 KB), `land.0.json` (31 KB).
+  `polities.json` (45 KB), `land.0.json` (31 KB).
 
 ## Decisions taken while brainstorming
 
@@ -189,13 +189,28 @@ Because `fadeYears` is capped at half the extent, alpha always reaches 1.
 
 Implemented as a linear scan over all rows, for the reasons measured above.
 
-### `change-index.ts`
+### `change-years.ts`
 
-Wraps `changes.json`. Collapses the 937 recorded years to the 509 real
-transition moments, then exposes `nextChangeAfter(year): number | null`.
+Exposes `nextChangeAfter(year): number | null`, over the years at which
+something visibly changes: a version's fade-in begins at its `fromYear`, and a
+version's fade-out begins at `toYear + 1`. The event set is therefore
+`{fromYear} union {toYear + 1}` across all versions -- the 509 moments measured
+above.
 
-M1 uses the union of all grid cells, which is the whole world. The signature
-takes no bounding box yet; M2 adds one and the collapse logic is unaffected.
+**M1 derives this from `versions.0.json` rows and does not load
+`changes.json`.** The index cannot produce it: its cells store `fromYear` and
+`toYear` values mixed together and indistinguishable, so `toYear + 1` cannot be
+recovered from them. Deriving from rows is exact, needs no heuristic, and costs
+one pass over data already in memory. The index exists for viewport scoping,
+which M1 does not do -- with no zoom, the whole world is the viewport.
+
+**A defect this exposes, for M2 to fix.** `changes.json` stores `toYear` where
+the visible event is at `toYear + 1`. When M2 introduces viewport-scoped
+queries it cannot paper over this per-cell, because adding 1 to every stored
+year would also corrupt the `fromYear` entries. The fix belongs in the pipeline:
+have `stages/change-index.ts` bucket `fromYear` and `toYear + 1` rather than
+`fromYear` and `toYear`, then re-bless the golden fixture. Recording it here so
+M2 finds it as a known task rather than as a rendering bug.
 
 ### `clock.ts`
 
@@ -203,25 +218,51 @@ The part 0006 governs, and the part most likely to change once the map is
 watched.
 
 ```
-manual:  speed = userSpeed                        exactly, at every tick
+manual:  speed = userSpeed                    exactly, at every tick
 
-auto:    remaining  = nextChange - currentYear
-         decelYears = baseSpeed * DECEL_SECONDS
-         target = remaining <= decelYears
-                    ? baseSpeed
-                    : max(baseSpeed, (remaining - decelYears) / (D - DECEL_SECONDS))
+auto:    target = max(baseSpeed, (nextChange - currentYear) / APPROACH_SECONDS)
+         applied = target <= applied
+                     ? target                                   snap down
+                     : applied + (target - applied) * (1 - e^(-dt / TAU))
 ```
 
-The applied speed is exponentially smoothed toward `target` with a time constant
-of about 0.3 s, so the handoff into the deceleration window is not a jolt.
-Reserving `DECEL_SECONDS` of the dead-time budget for the approach is what makes
-0006's "decelerate into an event" reachable while still spending no more than
-`D` on the gap: the fast stretch is sized to finish in `D - DECEL_SECONDS`, and
-the last `decelYears` are covered at reading speed.
+One constant governs the approach. Speed is set so the remaining distance would
+be covered in `APPROACH_SECONDS`, floored at reading speed, which means the
+target falls continuously as the event nears and equals `baseSpeed` for the last
+`baseSpeed * APPROACH_SECONDS` years. Arrival at reading speed is therefore true
+**by construction**, not by tuning.
+
+The asymmetry matters. Deceleration is applied immediately, which is not a jolt
+because the target is already falling continuously; acceleration is smoothed,
+because the target does jump upward the instant a change year is passed.
+
+An earlier formulation used two phases -- a fast stretch sized to finish in
+`D - DECEL_SECONDS`, then a fixed deceleration window -- and it is wrong. It
+sets the speed to cover the remaining distance in a fixed time but recomputes
+every frame as that distance shrinks, so it decays exponentially and never
+finishes on schedule. Simulated at 120 Hz against real gap sizes:
+
+| gap (years) | two-phase | this design | closed form |
+|---|---|---|---|
+| 5 (median) | 1.26 s | 1.26 s | 1.25 s |
+| 14 (p90) | 3.51 s | 2.88 s | 2.77 s |
+| 50 | 10.75 s | 4.88 s | 4.68 s |
+| 100 | 14.77 s | 5.93 s | 5.72 s |
+| 300 (max) | **20.72 s** | **7.58 s** | 7.37 s |
+
+The two-phase design blows the dead-time ceiling by a factor of three at the
+gaps that matter most. This one closes the dataset's largest gap in 7.58
+seconds, against Phase 0's estimated range of 5-10 and its starting value of 7 --
+so `D` is no longer a constant that is set, it is a property that falls out.
+The closed form for a gap `G` is `APPROACH_SECONDS * (1 + ln(G / (baseSpeed *
+APPROACH_SECONDS)))`; the simulation runs slightly above it because of the
+upward smoothing when a gap is first entered.
 
 Constants, all in one place and all provisional until the feel session:
-`D = 7` seconds (Phase 0's starting value), `DECEL_SECONDS = 1.5`,
-`FADE_SECONDS = 0.4`, base reading speed 4 years/second (Phase 0).
+`APPROACH_SECONDS = 1.5`, `TAU = 0.3` s, `FADE_SECONDS = 0.4`, base reading
+speed 4 years/second (Phase 0). Note the dead-time growth is logarithmic in gap
+size, so `APPROACH_SECONDS` is a far less twitchy dial than a hard ceiling
+would be.
 
 ### `flash.ts`
 
@@ -308,7 +349,9 @@ condition.
 
 ## Data loading and deployment
 
-M1 fetches four artifacts, 3.1 MB gzipped in total. The transfer is small but
+M1 fetches three artifacts -- `polities.json`, `versions.0.json` and
+`land.0.json`, about 3.1 MB gzipped in total. `changes.json` is not fetched;
+see `change-years.ts` above for why. The transfer is small but
 `versions.0.json` is 35.3 MB uncompressed, so the `JSON.parse` is not free: the
 app shows a real loading state rather than a blank canvas, and the loading path
 is written assuming parse time is the dominant cost, not download time.
@@ -336,9 +379,11 @@ packages/viewer/
     main.ts              wiring only
     engine/
       timeline.ts
-      change-index.ts
+      change-years.ts
       clock.ts
+      fade.ts
       flash.ts
+      constants.ts
       frame.ts           types
     render/
       canvas.ts
@@ -367,11 +412,14 @@ synthetic rows are needed to reach any suppression rule.
 1. In manual mode the instantaneous speed equals the user's setting at every
    tick, for every setting tested. It is never exceeded.
 2. In auto mode the speed is never below the base reading speed.
-3. In auto mode the speed equals the base reading speed, within epsilon, at the
-   tick a change year is reached.
-4. In auto mode the wall-clock time between two consecutive change years never
-   exceeds `D + 1` seconds. The extra second bounds the exponential smoothing,
-   whose 0.3 s time constant settles well within it.
+3. In auto mode the speed equals the base reading speed **exactly** at the tick
+   a change year is reached, for every gap size tested. This is a construction
+   property, not a tolerance.
+4. In auto mode, simulating the crossing of a gap of G years takes no longer
+   than `APPROACH_SECONDS * (1 + ln(G / (baseSpeed * APPROACH_SECONDS))) + 0.5`
+   seconds, checked at G = 5, 14, 50, 100 and 300 -- the last being this
+   dataset's largest gap. The simulation is the independent oracle here; the
+   closed form is not what the implementation computes.
 5. Playing the full timeline never moves the year backwards.
 
 **Fade (0001, as amended)**
@@ -392,12 +440,12 @@ synthetic rows are needed to reach any suppression rule.
 
 **Timeline**
 
-13. Every version whose claim interval contains the queried year is present in
-    the active set at alpha 1, and every returned alpha lies in `(0, 1]`.
-14. For every integer year in the fixture's range, at least one version is
-    returned at full alpha -- no year renders as an empty plate.
+13. For any queried year `y`, every version with `fromYear < y <= toYear + 1` is
+    returned with alpha `> 0`, and every returned alpha lies in `(0, 1]`.
+    Verified to hold with zero violations across both the fixture and the full
+    build.
 
-    These two replace an earlier formulation that cross-checked the active set
+    This replaces an earlier formulation that cross-checked the active set
     against a brute-force filter. That would have been vacuous: the
     implementation *is* a linear scan, so brute force is not an independent
     oracle -- unlike the pipeline's `nextChangeBruteForce`, which checked a grid
@@ -406,10 +454,28 @@ synthetic rows are needed to reach any suppression rule.
     against the raw claim interval, which the fade logic never consults, keeps
     the oracle independent.
 
+    Note the half-open interval. At `y == fromYear` a version is at the very
+    start of its fade-in and therefore at alpha 0, which is correct and not an
+    exclusion bug.
+
+14. **Checked in the full-build workflow, not the test suite.** Sampled at
+    mid-year, every year from -3400 to 2024 has at least one version at alpha
+    `> 0` -- the map is never a blank plate. This cannot live in `pnpm test`,
+    because the fixture is a deliberately sparse 47-version slice with 2,180
+    uncovered years; it is a property of the real dataset, so it belongs beside
+    the existing 8 MB budget check in `.github/workflows/full-build.yml`.
+
+    Measured on the full build: 0 empty years sampled at mid-year, which is what
+    playback actually renders. Sampled at exact integer years there is exactly
+    one, -3400, because every version beginning in the dataset's first year is
+    at alpha 0 at the instant it begins.
+
 **Change index**
 
-15. Collapsing the fixture's index years yields only years at which a version
-    starts or ends, and `nextChangeAfter(y)` never returns a year `<= y`.
+15. `nextChangeAfter(y)` returns the smallest event year strictly greater than
+    `y`, and null past the last one. The event set is checked to equal
+    `{fromYear} union {toYear + 1}` over the fixture's rows, computed
+    independently of the implementation.
 
 **Render, pure parts**
 

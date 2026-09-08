@@ -82,8 +82,9 @@ guessed:
 
 Neither figure says anything about whether the playback feel or the palette
 hold up at that density. The original 16-hue palette was watched and reported
-broken; the geographic-hue replacement (decision 0016) has not itself been
-judged by a human watching the map run against the real dataset, and that
+broken; a geographic-hue replacement was tried and measured to be worse, not
+better (decision 0016); the two-tier palette that replaced both has not itself
+been judged by a human watching the map run against the real dataset, and that
 judgement is Milestone 1's exit condition, not something this document can
 assert on its behalf.
 

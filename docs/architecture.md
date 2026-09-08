@@ -80,10 +80,12 @@ guessed:
   `PX_PER_UNIT` constants in `packages/model/src/canon.ts`, which were a
   guess made before any viewport existed.
 
-Neither figure says anything about whether the playback feel or the 16-hue
-palette hold up at that density - a human has not yet watched the map run
-against the real dataset, and that judgement is Milestone 1's exit
-condition, not something this document can assert on its behalf.
+Neither figure says anything about whether the playback feel or the palette
+hold up at that density. The original 16-hue palette was watched and reported
+broken; the geographic-hue replacement (decision 0016) has not itself been
+judged by a human watching the map run against the real dataset, and that
+judgement is Milestone 1's exit condition, not something this document can
+assert on its behalf.
 
 ## The canonical model
 

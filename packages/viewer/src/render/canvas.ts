@@ -14,8 +14,10 @@ const LAND = "#2b3440";
 const FLASH = "#fdf6e3";
 /**
  * Stroked around every filled polity, after the fill, so two neighbours that
- * land on the same palette colour (decision 0016: 12 hues is a deliberate
- * ceiling, so repeats happen) read as separate shapes instead of merging into
+ * land on the same palette colour (decision 0016: only 30-40 sprawling
+ * empires ever get a graph-coloured guarantee against that; roughly 1,450
+ * compact polities still share a muted palette by hash, so repeats among
+ * neighbours are expected) read as separate shapes instead of merging into
  * one blob. Darker than both ground tones -- LAND is #2b3440, SEA is
  * #101b26 -- so it reads as a seam on every fill, including the darkest
  * palette lightness band, rather than disappearing into the plate the way a

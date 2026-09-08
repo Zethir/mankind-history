@@ -142,26 +142,27 @@ describe("palette", () => {
   // Italy (a small Tianjin concession held 1901-1943 alongside the mainland
   // pushes several of its interwar versions past 110 degrees), and Nazi
   // Germany (occupied territory reaching from France to deep in the occupied
-  // USSR, ~53 degrees at its widest version). This was not expected going in
-  // -- see the report for the full check of whether this fixture has any
-  // sprawling polity at all -- and it means this fixture happens to also
-  // exercise the tier-1 guarantee for real: Kingdom of Italy and Nazi Germany
-  // are both tier 1 and genuinely co-visible (1936-1943), and get different
-  // colours (hue 0 vs hue 36) below.
+  // USSR, 45.42 degrees at its widest version -- only 0.42 above the
+  // threshold, computed and confirmed, not eyeballed). This was not expected
+  // going in -- see the report for the full check of whether this fixture
+  // has any sprawling polity at all -- and it means this fixture happens to
+  // also exercise the tier-1 guarantee for real: Kingdom of Italy and Nazi
+  // Germany are both tier 1 and genuinely co-visible (1936-1943), and get
+  // different colours (hue 0 vs hue 36) below.
   it("matches the committed golden colours for the fixture's polities", () => {
     const golden: Record<string, string> = {
       "name:Eastern Roman Empire": "hsl(0 62% 74%)",
-      "name:Etruscans": "hsl(180 26% 58%)",
+      "name:Etruscans": "hsl(180 26% 38%)",
       "name:Kingdom of Italy": "hsl(0 62% 74%)",
       "name:Nazi Germany": "hsl(36 62% 74%)",
-      "name:Ostrogothic Kingdom": "hsl(180 26% 42%)",
-      "name:Papal States": "hsl(300 26% 58%)",
-      "name:Republic of Italy": "hsl(180 26% 58%)",
-      "name:Roman Kingdom": "hsl(120 26% 58%)",
-      "name:Roman Republic": "hsl(210 26% 42%)",
-      "name:Vandal Kingdom": "hsl(90 26% 42%)",
-      "name:Visigoths": "hsl(0 26% 58%)",
-      "name:Western Roman Empire": "hsl(30 26% 58%)",
+      "name:Ostrogothic Kingdom": "hsl(180 26% 60%)",
+      "name:Papal States": "hsl(300 26% 60%)",
+      "name:Republic of Italy": "hsl(180 26% 60%)",
+      "name:Roman Kingdom": "hsl(120 26% 60%)",
+      "name:Roman Republic": "hsl(210 26% 38%)",
+      "name:Vandal Kingdom": "hsl(90 26% 48%)",
+      "name:Visigoths": "hsl(0 26% 38%)",
+      "name:Western Roman Empire": "hsl(30 26% 38%)",
     };
     const palette = buildPalette(versions);
     const actual: Record<string, string> = {};
@@ -198,11 +199,22 @@ describe("palette", () => {
   // rather than constructed data: it would be a coincidence for the golden
   // vector above to keep passing if this regressed, but that test does not
   // *name* what it is protecting, so this one does.
+  //
+  // Nazi Germany's widest version spans 45.42 degrees, only 0.42 above
+  // SPRAWL_THRESHOLD_DEGREES -- a fragile margin. A regression that dropped
+  // it to tier 2 would still pass a bare colour inequality (the tiers use
+  // disjoint saturations, so a tier-1/tier-2 pair is trivially unequal too),
+  // silently stopping this test from testing the guarantee it names. Both
+  // saturations are pinned to tier 1's 62% first so that failure mode is
+  // itself caught.
   it("gives the fixture's one genuinely co-visible sprawling pair different colours", () => {
     const palette = buildPalette(versions);
-    expect(palette.colourFor("name:Kingdom of Italy")).not.toBe(
-      palette.colourFor("name:Nazi Germany"),
-    );
+    const italy = palette.colourFor("name:Kingdom of Italy");
+    const germany = palette.colourFor("name:Nazi Germany");
+    const saturationOf = (colour: string) => /^hsl\([\d.]+ (\d+)%/.exec(colour)?.[1];
+    expect(saturationOf(italy), "Kingdom of Italy must be tier 1").toBe("62");
+    expect(saturationOf(germany), "Nazi Germany must be tier 1").toBe("62");
+    expect(italy).not.toBe(germany);
   });
 });
 

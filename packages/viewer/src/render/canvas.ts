@@ -1,6 +1,6 @@
 import type { LandArtifact, Polygon, VersionsArtifact } from "@history/model";
 import type { Frame } from "../engine/frame";
-import { colourFor } from "./palette";
+import { buildPalette, type Palette } from "./palette";
 import { buildPolityIndex } from "./polity-index";
 import { fitWorld, toScreen, type Viewport } from "./transform";
 
@@ -12,6 +12,16 @@ import { fitWorld, toScreen, type Viewport } from "./transform";
 const SEA = "#101b26";
 const LAND = "#2b3440";
 const FLASH = "#fdf6e3";
+/**
+ * Stroked around every filled polity, after the fill, so two neighbours that
+ * land on the same palette colour (decision 0016: 12 hues is a deliberate
+ * ceiling, so repeats happen) read as separate shapes instead of merging into
+ * one blob. Darker than both ground tones -- LAND is #2b3440, SEA is
+ * #101b26 -- so it reads as a seam on every fill, including the darkest
+ * palette lightness band, rather than disappearing into the plate the way a
+ * mid-tone stroke would over SEA.
+ */
+const OUTLINE = "#04070a";
 
 export class MapRenderer {
   readonly viewport: Viewport;
@@ -19,6 +29,7 @@ export class MapRenderer {
   private readonly paths = new Map<string, Path2D>();
   private readonly polityOf: Map<string, string>;
   private readonly areaOf = new Map<string, number>();
+  private readonly palette: Palette;
   private landPath: Path2D | null = null;
 
   constructor(
@@ -30,6 +41,7 @@ export class MapRenderer {
     if (!ctx) throw new Error("canvas 2d context unavailable");
     this.ctx = ctx;
     this.polityOf = buildPolityIndex(versions);
+    this.palette = buildPalette(versions);
     for (const r of versions.rows) {
       this.areaOf.set(r.id, r.area);
     }
@@ -79,8 +91,13 @@ export class MapRenderer {
       const polityId = this.polityOf.get(d.versionId);
       if (polityId === undefined) continue;
       ctx.globalAlpha = d.alpha;
-      ctx.fillStyle = colourFor(polityId);
+      ctx.fillStyle = this.palette.colourFor(polityId);
       ctx.fill(path);
+      // Same globalAlpha as the fill, so the outline fades with the version
+      // rather than persisting as a solid line after the shape has faded out.
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 1;
+      ctx.stroke(path);
       if (d.flash > 0) {
         ctx.globalAlpha = d.alpha * d.flash * 0.55;
         ctx.fillStyle = FLASH;

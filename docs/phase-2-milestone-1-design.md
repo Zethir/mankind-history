@@ -335,6 +335,12 @@ fallback: if neighbours read as the same colour, use **fewer hues with more
 lightness separation**, not more hues. Judging this is part of M1's exit
 condition.
 
+**Update, post feel session:** this was judged, and it failed -- distant,
+unrelated polities sharing a colour read as one invading the other. The fix,
+12 hues at 55% saturation with hue seeded from each polity's longitude rank
+rather than a hash of its id, is decision 0016. It still has not itself been
+judged by a human watching the map.
+
 ## Chrome
 
 - **Year readout**, deliberately prominent. Per 0006 the racing year is the
@@ -512,9 +518,10 @@ synthetic rows are needed to reach any suppression rule.
 
 20. Deployed to a public URL, serving app and data from one commit.
 21. The project owner watches it and judges two things Phase 0 could not: does
-    adaptive playback feel right, and does the 16-hue palette hold up at real
+    adaptive playback feel right, and does the palette hold up at real
     density. Both are permitted to change the design; that is why this milestone
-    is first.
+    is first. (The 16-hue palette this criterion originally named did not hold
+    up; see decision 0016 for the replacement, itself not yet judged.)
 
 ## New decision records to author
 
@@ -543,9 +550,11 @@ if the acceleration fraction came back high. It came back 37% / 37% / 54% / 62%.
 If it feels wrong, M1 is the cheapest possible place to find out, and the
 engine/renderer split means the fix is contained in `clock.ts`.
 
-**The palette may not survive real density.** Sixteen hues at 34% saturation,
-never tested against the Mediterranean at peak with up to 195 simultaneous
-polities. The fallback is recorded; the risk is that it costs a second pass.
+**The palette did not survive real density.** Sixteen hues at 34% saturation,
+tested against the Mediterranean at peak with up to 195 simultaneous
+polities, was reported broken at the feel session -- see decision 0016 for
+the measurements and the fix. This cost the second pass the original risk
+note anticipated, and the replacement palette itself is not yet feel-tested.
 
 **`D = 7` is untuned.** It is Phase 0's starting estimate against a range of
 5-10 seconds. The 300-year maximum gap means the constant is genuinely

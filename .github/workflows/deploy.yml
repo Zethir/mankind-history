@@ -39,8 +39,12 @@ jobs:
 
       - run: pnpm fetch:sources
       - run: pnpm build
-      # Vite's publicDir points at dist/, so this copies the artifacts into the
-      # site: the app and its data always ship from one commit.
+      # prebuild (scripts/stage-data.mjs) stages the four artifacts this
+      # milestone needs from the just-built dist/ into public-data/, which is
+      # what Vite's publicDir actually points at -- not dist/ itself, which
+      # also carries versions.1.json and versions.2.json (~124 MB this
+      # milestone never requests). Building right after `pnpm build` means
+      # the staged data and the app ship from one commit.
       - run: pnpm --filter @history/viewer build
 
       - uses: actions/configure-pages@v5

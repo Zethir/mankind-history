@@ -106,6 +106,39 @@ describe("palette", () => {
     }
   });
 
+  // "Stable across runs" needs an actual colour pinned somewhere, not just
+  // self-equality: `colourFor(p.id) === colourFor(p.id)` cannot fail for any
+  // pure function, and the sibling tests derive their expectation from the
+  // same id they colour, so neither can catch a changed palette. This golden
+  // vector is the deliberate diff: a feel-session tweak to SATURATION,
+  // LIGHTNESS or the hash function shows up here as a failing object-diff
+  // naming every polity whose colour moved, rather than passing silently.
+  // Verified by temporarily changing SATURATION from 34 to 50: all twelve
+  // entries showed up as mismatched (wrong "50%" instead of "34%") in the
+  // single toEqual diff below, then reverted.
+  it("matches the committed golden colours for the fixture's polities", () => {
+    const golden: Record<string, string> = {
+      "name:Eastern Roman Empire": "hsl(337.5 34% 62%)",
+      "name:Etruscans": "hsl(315 34% 62%)",
+      "name:Kingdom of Italy": "hsl(202.5 34% 62%)",
+      "name:Nazi Germany": "hsl(292.5 34% 62%)",
+      "name:Ostrogothic Kingdom": "hsl(225 34% 52%)",
+      "name:Papal States": "hsl(45 34% 52%)",
+      "name:Republic of Italy": "hsl(315 34% 52%)",
+      "name:Roman Kingdom": "hsl(90 34% 62%)",
+      "name:Roman Republic": "hsl(67.5 34% 62%)",
+      "name:Vandal Kingdom": "hsl(157.5 34% 52%)",
+      "name:Visigoths": "hsl(180 34% 62%)",
+      "name:Western Roman Empire": "hsl(22.5 34% 62%)",
+    };
+    const polities = readArtifact<PolitiesArtifact>("fixtures/dist/polities.json").polities;
+    const actual: Record<string, string> = {};
+    for (const p of polities) actual[p.id] = colourFor(p.id);
+    // One object-level assertion, so a mismatch reports every affected
+    // polity's id and colour at once instead of stopping at the first.
+    expect(actual).toEqual(golden);
+  });
+
   it("gives every version of one polity the same colour", () => {
     const versions = readArtifact<VersionsArtifact>("fixtures/dist/versions.0.json");
     const byPolity = new Map<string, Set<string>>();

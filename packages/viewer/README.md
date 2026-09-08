@@ -15,12 +15,13 @@ pnpm --filter @history/viewer dev
 ```
 
 `predev` and `prebuild` run `scripts/stage-data.mjs`, which copies
-`polities.json`, `versions.0.json` and `land.0.json` into `public-data/` -
-Vite's `publicDir` - preferring the repo's real `dist/` (from `pnpm build` at
-the root) and falling back to the committed `fixtures/dist/` so a fresh
-clone can run before anything is fetched or built. `vite.config.ts` never
-points `publicDir` at `dist/` directly: `dist/` also carries `versions.1.json`
-and `versions.2.json`, 154 MB together, which this milestone never requests.
+`polities.json`, `versions.0.json`, `land.0.json` and `manifest.json` into
+`public-data/` - Vite's `publicDir` - preferring the repo's real `dist/`
+(from `pnpm build` at the root) and falling back to the committed
+`fixtures/dist/` so a fresh clone can run before anything is fetched or
+built. `vite.config.ts` never points `publicDir` at `dist/` directly:
+`dist/` is ~161 MB in total because it also carries `versions.1.json` and
+`versions.2.json`, ~124 MB together, which this milestone never requests.
 
 ```bash
 pnpm --filter @history/viewer build   # writes dist-app/
@@ -65,8 +66,10 @@ version's `Path2D`.
 
 ## Two measured figures
 
-- The coarse level's worst frame in the whole dataset (year 2014) draws 195
-  active versions and 19,729 vertices. See decision 0015.
+- The coarse level's two worst-frame maxima in the whole dataset fall in
+  different years: the most active versions in one year is 195, in 2014
+  (18,537 vertices there); the most on-screen vertices in one year is 19,729,
+  in 1919 (90 versions there). See decision 0015.
 - `fitWorld` in `src/render/transform.ts` measures the real
   pixels-per-projected-unit figure for whatever canvas size it is given: at
   1400x900 that is 258.6 px per projected unit, the number Milestone 2 uses

@@ -65,9 +65,11 @@ someone had to notice on screen.
 Two figures from this split, both measured on the real dataset rather than
 guessed:
 
-- **Worst-case frame cost.** The coarse level's worst year (2014) draws 195
-  active versions and 19,729 vertices - under 20,000 vertices even at the
-  single densest moment in 5,424 years of coverage. That measurement is why
+- **Worst-case frame cost.** The coarse level's two maxima fall in different
+  years: 2014 has the most active versions (195, 18,537 vertices), 1919 has
+  the most on-screen vertices (19,729, from 90 versions) - under 20,000
+  vertices even at the single densest moment in 5,424 years of coverage. That
+  measurement is why
   `MapRenderer` does no render caching beyond memoizing each version's
   `Path2D` for its lifetime: see decision 0015 for the full distribution
   (median, p95, worst) and the reasoning.

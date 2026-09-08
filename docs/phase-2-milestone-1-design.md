@@ -46,7 +46,8 @@ Taken against the full pinned build (1,583 polities, 13,380 versions,
 |---|---|---|
 | median year | 35 | 1,548 |
 | p95 | 147 | 16,066 |
-| worst year (2014) | 195 | 19,729 |
+| most versions, year 2014 | 195 | 18,537 |
+| most vertices, year 1919 | 90 | 19,729 |
 
 The coarse artifact holds 2,400,206 vertices in total, but a year is a thin
 slice of a 5,424-year span, so the worst frame ever drawn is under 20,000

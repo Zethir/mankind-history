@@ -22,10 +22,12 @@ of its own.
 
 A year is a thin slice of a 5,424-year span. Measured across the whole
 timeline: median 35 active versions and 1,548 on-screen vertices, p95 147
-versions and 16,066 vertices, worst year (2014) 195 versions and 19,729
-vertices. Even the worst frame ever drawn stays under 20,000 vertices, two
-orders of magnitude below the artifact's total. There is no per-frame cost
-here for caching to save.
+versions and 16,066 vertices. The two maxima land in different years: the
+most active versions in one year is 195, in 2014 (18,537 vertices there), and
+the most on-screen vertices in one year is 19,729, in 1919 (90 versions
+there). Even the worst frame for vertices stays under 20,000, two orders of
+magnitude below the artifact's total. There is no per-frame cost here for
+caching to save.
 
 ## Consequences
 

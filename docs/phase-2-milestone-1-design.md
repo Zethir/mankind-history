@@ -398,6 +398,24 @@ packages/viewer/
 Imports types and constants from `packages/model`. Never from
 `packages/pipeline`, per `docs/architecture.md`.
 
+## The implementation plan
+
+The task-by-task plan this design was executed from lived at
+`docs/phase-2-milestone-1-plan.md` and has been retired: it was a 2,200-line
+document, most of it code that now exists in the repository, so keeping it
+invited drift between two copies of the same thing. Recover it with:
+
+```
+git show 3c65ffc:docs/phase-2-milestone-1-plan.md
+```
+
+Worth knowing if you do: the plan was wrong in several places, and the
+corrections are the interesting part. Its snapshot years pinned empty frames,
+its clock formula overran the dead-time ceiling threefold, its first-appearance
+test could not fail, and its `publicDir` would have published 161 MB. Each was
+caught during execution and is recorded in this document or in a decision
+record.
+
 ## Acceptance criteria
 
 Every one of these is a test, named after the criterion, run by `pnpm test`

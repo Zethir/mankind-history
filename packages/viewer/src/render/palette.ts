@@ -60,7 +60,9 @@ import { FADE_SECONDS, SPEED_STEPS } from "../engine/constants";
  * 2014 -- so its density matters even though no per-pair guarantee is made
  * for it: at 36 colours, mean 4.83 polities per colour there (worst 10),
  * better than both the 24-colour cut it replaces (mean 7.25, worst 13) and
- * the originally shipped palette's 32 (mean 5.44, worst 11). No graph
+ * the originally shipped single-tier palette, which spread all 195 of that
+ * year's polities across its 32 colours (mean 6.09, worst 12) -- the actual
+ * experience the owner watched and reported broken. No graph
  * colouring here: proximity-graph colouring was measured to roughly halve
  * local same-colour overlap for this tier (16.1% down to 8.7%), but needs a
  * load-time computation (a spatial proximity graph over ~1,450 polities and

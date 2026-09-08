@@ -1,5 +1,5 @@
-import type { PolitiesArtifact, VersionsArtifact } from "@history/model";
-import { COORD_SCALE, WORLD_HALF_HEIGHT, WORLD_HALF_WIDTH } from "@history/model";
+import type { PolitiesArtifact, Version, VersionGeometry, VersionsArtifact } from "@history/model";
+import { COORD_SCALE, equalEarth, WORLD_HALF_HEIGHT, WORLD_HALF_WIDTH } from "@history/model";
 import { readArtifact } from "@history/model/artifact";
 import { describe, expect, it } from "vitest";
 import { buildPalette } from "../src/render/palette";
@@ -109,12 +109,14 @@ describe("palette", () => {
     }
   });
 
-  // Building the palette twice from the same artifact must be byte-identical
-  // for every polity. Colour is no longer a pure function of the id alone
-  // (decision 0016: it also depends on every other polity's position in this
-  // artifact), so this is a separate guarantee from the self-equality test
-  // above -- it is the one that would catch, say, a Map iteration order
-  // dependency or a sort that is not a total order.
+  // Test 3: determinism. Building the palette twice from the same artifact
+  // must be byte-identical for every polity. Colour is not a pure function of
+  // the id alone -- tier-1 membership and its colour index both depend on
+  // every polity's versions in this artifact (see decision 0016) -- so this
+  // is a separate guarantee from the self-equality test above. It is the one
+  // that would catch a Map/Set iteration order dependency, an unstable sort,
+  // or greedy colouring visiting nodes in a non-deterministic tie-break
+  // order.
   it("builds the same colours twice from the same artifact", () => {
     const first = buildPalette(versions);
     const second = buildPalette(versions);
@@ -127,32 +129,39 @@ describe("palette", () => {
   // self-equality: `colourFor(p.id) === colourFor(p.id)` cannot fail for any
   // pure function, and the sibling tests derive their expectation from the
   // same id they colour, so neither can catch a changed palette. This golden
-  // vector is the deliberate diff: a feel-session tweak to SATURATION,
-  // LIGHTNESS or the hash function shows up here as a failing object-diff
-  // naming every polity whose colour moved, rather than passing silently.
-  // Verified by temporarily changing SATURATION from 55 to 50: all twelve
-  // entries showed up as mismatched (wrong "50%" instead of "55%") in the
-  // single toEqual diff below, then reverted.
+  // vector is the deliberate diff: a feel-session tweak to a saturation or
+  // lightness constant shows up here as a failing object-diff naming every
+  // polity whose colour moved, rather than passing silently. Verified by
+  // temporarily changing TIER1_SATURATION from 62 to 60 -- see the report
+  // this shipped with for both the failing and the restored-green run.
   //
-  // Regenerated for decision 0016's geographic-hue palette. With exactly 12
-  // polities in this fixture and PALETTE_HUES = 12, every polity lands in its
-  // own hue band (rank and hue index coincide 0..11), sorted by each
-  // polity's earliest-version anchor x ascending: Western Roman Empire
-  // (x=-6101) through Eastern Roman Empire (x=44913).
+  // Regenerated for the two-tier palette. Three of these twelve fixture
+  // polities turn out to qualify for tier 1 (a version bounding box spanning
+  // more than 45 degrees of longitude): Eastern Roman Empire (Justinian's
+  // African and Italian reconquest, 536-554, spans ~47 degrees), Kingdom of
+  // Italy (a small Tianjin concession held 1901-1943 alongside the mainland
+  // pushes several of its interwar versions past 110 degrees), and Nazi
+  // Germany (occupied territory reaching from France to deep in the occupied
+  // USSR, ~53 degrees at its widest version). This was not expected going in
+  // -- see the report for the full check of whether this fixture has any
+  // sprawling polity at all -- and it means this fixture happens to also
+  // exercise the tier-1 guarantee for real: Kingdom of Italy and Nazi Germany
+  // are both tier 1 and genuinely co-visible (1936-1943), and get different
+  // colours (hue 0 vs hue 36) below.
   it("matches the committed golden colours for the fixture's polities", () => {
     const golden: Record<string, string> = {
-      "name:Western Roman Empire": "hsl(0 55% 40%)",
-      "name:Nazi Germany": "hsl(30 55% 72%)",
-      "name:Vandal Kingdom": "hsl(60 55% 56%)",
-      "name:Kingdom of Italy": "hsl(90 55% 72%)",
-      "name:Republic of Italy": "hsl(120 55% 72%)",
-      "name:Ostrogothic Kingdom": "hsl(150 55% 72%)",
-      "name:Etruscans": "hsl(180 55% 40%)",
-      "name:Roman Kingdom": "hsl(210 55% 72%)",
-      "name:Roman Republic": "hsl(240 55% 40%)",
-      "name:Visigoths": "hsl(270 55% 40%)",
-      "name:Papal States": "hsl(300 55% 72%)",
-      "name:Eastern Roman Empire": "hsl(330 55% 72%)",
+      "name:Eastern Roman Empire": "hsl(0 62% 74%)",
+      "name:Etruscans": "hsl(180 26% 58%)",
+      "name:Kingdom of Italy": "hsl(0 62% 74%)",
+      "name:Nazi Germany": "hsl(36 62% 74%)",
+      "name:Ostrogothic Kingdom": "hsl(180 26% 42%)",
+      "name:Papal States": "hsl(300 26% 58%)",
+      "name:Republic of Italy": "hsl(180 26% 58%)",
+      "name:Roman Kingdom": "hsl(120 26% 58%)",
+      "name:Roman Republic": "hsl(210 26% 42%)",
+      "name:Vandal Kingdom": "hsl(90 26% 42%)",
+      "name:Visigoths": "hsl(0 26% 58%)",
+      "name:Western Roman Empire": "hsl(30 26% 58%)",
     };
     const palette = buildPalette(versions);
     const actual: Record<string, string> = {};
@@ -162,6 +171,7 @@ describe("palette", () => {
     expect(actual).toEqual(golden);
   });
 
+  // Test 4: stability per polity.
   it("gives every version of one polity the same colour", () => {
     const palette = buildPalette(versions);
     const byPolity = new Map<string, Set<string>>();
@@ -182,59 +192,151 @@ describe("palette", () => {
     }
   });
 
-  // The point of decision 0016: hue is seeded from longitude, so it must vary
-  // *with* geography rather than at random. This is the assertion that
-  // matters most in this file -- it is written to fail against the exact
-  // wrong implementation this change replaces.
-  //
-  // Sort the fixture's 12 polities by their earliest version's anchor x
-  // (ascending, ties on polity id -- the same rule buildPalette itself uses)
-  // and read the hue out of each resolved colour. Because hueIndex is
-  // assigned by rank, that sequence of hues is non-decreasing by
-  // construction whenever, as here, every polity gets its own hue band.
-  //
-  // The OLD hash-based colourFor(polityId) -- hue = (hash(id) % 16) * 360/16,
-  // uncorrelated with position -- fails this on the very same fixture: in
-  // anchor-x order its hues are
-  // [22.5, 292.5, 157.5, 202.5, 315, 225, 315, 90, 67.5, 180, 45, 337.5],
-  // which drops from 22.5 to 292.5 between the first two entries alone. That
-  // is the concrete wrong implementation this test is built to catch -- a
-  // colour keyed on the id's hash with no relationship to where the polity
-  // actually is.
-  it("assigns hue in the same order as geography, not at random", () => {
-    const earliest = new Map<string, { versionId: string; fromYear: number }>();
-    for (const row of versions.rows) {
-      const current = earliest.get(row.polityId);
-      if (
-        !current ||
-        row.fromYear < current.fromYear ||
-        (row.fromYear === current.fromYear && row.id < current.versionId)
-      ) {
-        earliest.set(row.polityId, { versionId: row.id, fromYear: row.fromYear });
-      }
-    }
-    const byAnchorX = polities
-      .map((p) => {
-        const entry = earliest.get(p.id);
-        expect(entry, p.id).toBeDefined();
-        const anchor = versions.geometry[(entry as { versionId: string }).versionId]?.anchor;
-        expect(anchor, p.id).toBeDefined();
-        return { id: p.id, x: (anchor as [number, number])[0] };
-      })
-      .sort((a, b) => a.x - b.x || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-
+  // Kingdom of Italy and Nazi Germany (see the golden-vector comment above)
+  // are both tier 1 and were both really on the map at the same time
+  // (1936-1943). This is the guarantee, observed on real, if small, data
+  // rather than constructed data: it would be a coincidence for the golden
+  // vector above to keep passing if this regressed, but that test does not
+  // *name* what it is protecting, so this one does.
+  it("gives the fixture's one genuinely co-visible sprawling pair different colours", () => {
     const palette = buildPalette(versions);
-    const hues = byAnchorX.map(({ id }) => {
-      const match = /^hsl\((\d+(?:\.\d+)?) /.exec(palette.colourFor(id));
-      expect(match, id).not.toBeNull();
-      return Number.parseFloat((match as RegExpExecArray)[1] as string);
-    });
+    expect(palette.colourFor("name:Kingdom of Italy")).not.toBe(
+      palette.colourFor("name:Nazi Germany"),
+    );
+  });
+});
 
-    for (let i = 1; i < hues.length; i++) {
-      expect(
-        hues[i],
-        `${byAnchorX[i]?.id} should not have a lower hue than ${byAnchorX[i - 1]?.id}`,
-      ).toBeGreaterThanOrEqual(hues[i - 1] as number);
+/**
+ * A version whose bounding box spans exactly `spanDeg` degrees of longitude at
+ * the equator, per `lonSpanDegrees` in palette.ts (both corners unprojected at
+ * the same latitude). The equator is the simplest case to construct by
+ * forward-projecting instead of guessing scaled-integer coordinates: at
+ * lat 0, Equal Earth's x is linear in longitude, so this is exactly invertible
+ * by the palette's own span calculation.
+ */
+function bboxSpanningDegrees(
+  spanDeg: number,
+  coordScale: number,
+): [number, number, number, number] {
+  const half = spanDeg / 2;
+  const [xMin] = equalEarth(-half, 0);
+  const [xMax] = equalEarth(half, 0);
+  return [Math.round(xMin * coordScale), 0, Math.round(xMax * coordScale), 0];
+}
+
+function makeVersion(id: string, polityId: string, fromYear: number, toYear: number): Version {
+  return {
+    id,
+    polityId,
+    fromYear,
+    toYear,
+    area: 1000,
+    prevId: null,
+    delta: null,
+    gap: null,
+    confidence: null,
+    source: { dataset: "cliopatria", version: "test" },
+  };
+}
+
+function makeGeometry(bbox: [number, number, number, number]): VersionGeometry {
+  return { polygons: [], bbox, anchor: [0, 0] };
+}
+
+/**
+ * Six sprawling polities (bbox span 60 degrees, well past the 45-degree
+ * threshold) all visible in the same years, 1900-1950, plus one compact
+ * polity (span 5 degrees) visible over the same span.
+ *
+ * The fixture's real tier-1 polities (see the golden-vector test) are too few
+ * and too historically scattered in time to exercise this on their own: the
+ * one genuinely co-visible real pair is exactly two polities, which is not
+ * enough to guarantee catching a broken implementation, only enough to notice
+ * if this particular one broke. This synthetic artifact is built to fail
+ * against the pre-decision-0016 hash-only implementation on purpose -- see
+ * the guarantee test below for exactly how.
+ */
+const SPRAWL_IDS = [
+  "name:Sprawler 0",
+  "name:Sprawler 1",
+  "name:Sprawler 2",
+  "name:Sprawler 38",
+  "name:Sprawler 39",
+  "name:Sprawler 74",
+];
+const COMPACT_ID = "name:Compact A";
+
+function buildSyntheticArtifact(): VersionsArtifact {
+  const coordScale = 100_000;
+  const rows: Version[] = [];
+  const geometry: Record<string, VersionGeometry> = {};
+
+  for (const polityId of SPRAWL_IDS) {
+    const versionId = `${polityId}@1900`;
+    rows.push(makeVersion(versionId, polityId, 1900, 1950));
+    geometry[versionId] = makeGeometry(bboxSpanningDegrees(60, coordScale));
+  }
+
+  const compactVersionId = `${COMPACT_ID}@1900`;
+  rows.push(makeVersion(compactVersionId, COMPACT_ID, 1900, 1950));
+  geometry[compactVersionId] = makeGeometry(bboxSpanningDegrees(5, coordScale));
+
+  return { schemaVersion: 1, level: "coarse", coordScale, rows, geometry };
+}
+
+describe("palette: tier-1 sprawl guarantee (synthetic artifact)", () => {
+  // Test 1: the guarantee, and the one that matters most in this file.
+  //
+  // All six ids below share one year range (1900-1950), so every pair is
+  // co-visible and none may share a colour. This is deliberately constructed
+  // to fail against the palette this change replaces: under the
+  // pre-decision-0016 implementation (`hash(id) % 16` for hue, `hash(id)`
+  // again for one of two lightness bands, no notion of co-visibility at
+  // all), FNV-1a puts "name:Sprawler 0" and "name:Sprawler 39" in the exact
+  // same hue/lightness bucket -- both resolve to the byte-identical
+  // "hsl(45 34% 62%)" -- and separately puts "name:Sprawler 1",
+  // "name:Sprawler 38" and "name:Sprawler 74" all in another shared bucket,
+  // "hsl(112.5 34% 52%)". Confirmed by running that exact formula
+  // (`packages/viewer/src/render/palette.ts` as of commit `6f52e13`) against
+  // these six ids. A palette that goes back to colouring tier-1 polities by a
+  // bare hash of the id, without the co-visibility graph, reproduces that
+  // collision and fails this test.
+  it("gives every simultaneously-visible sprawling polity its own colour", () => {
+    const palette = buildPalette(buildSyntheticArtifact());
+    const colours = SPRAWL_IDS.map((id) => palette.colourFor(id));
+    expect(new Set(colours).size).toBe(SPRAWL_IDS.length);
+  });
+
+  // Test 2: tier separation. A sprawling polity and a compact one must never
+  // resolve to the same colour string, so an empire can never read as just
+  // another local polity. Saturation is what actually separates the tiers
+  // (62% vs 26%), so this also pins that "Compact A" -- which happens to
+  // land in the same hue band as one of the sprawlers -- is still told apart
+  // by saturation alone.
+  it("never gives a sprawling polity the same colour as a compact one", () => {
+    const palette = buildPalette(buildSyntheticArtifact());
+    const compactColour = palette.colourFor(COMPACT_ID);
+    for (const id of SPRAWL_IDS) {
+      expect(palette.colourFor(id), id).not.toBe(compactColour);
+    }
+    const compactSaturation = /^hsl\([\d.]+ (\d+)%/.exec(compactColour)?.[1];
+    expect(compactSaturation).toBe("26");
+    for (const id of SPRAWL_IDS) {
+      const sprawlSaturation = /^hsl\([\d.]+ (\d+)%/.exec(palette.colourFor(id))?.[1];
+      expect(sprawlSaturation, id).toBe("62");
+    }
+  });
+
+  // Determinism, re-checked against the synthetic artifact: the real-fixture
+  // version of this test (above) has only three tier-1 polities and no
+  // co-visible clique larger than two, so it exercises greedy colouring's
+  // ordering far less than a six-node mutually-adjacent graph does.
+  it("builds the same colours twice from the same synthetic artifact", () => {
+    const synthetic = buildSyntheticArtifact();
+    const first = buildPalette(synthetic);
+    const second = buildPalette(synthetic);
+    for (const id of [...SPRAWL_IDS, COMPACT_ID]) {
+      expect(second.colourFor(id), id).toBe(first.colourFor(id));
     }
   });
 });

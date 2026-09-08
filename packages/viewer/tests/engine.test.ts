@@ -34,6 +34,71 @@ describe("Engine", () => {
     expect(engine.clock.year).toBe(engine.range[1] + 1);
   });
 
+  // Without this, `engine.play()` was `engine.playing = true` unconditionally
+  // (via chrome.ts's toggle): with the clock already pinned at
+  // `range[1] + 1`, the very next advance() call re-clamps the year and
+  // clears `playing` again (see advance() above), so playback never actually
+  // resumes -- a dead Play button once the timeline has played to the end.
+  it("restarts from the beginning when played again after reaching the end", () => {
+    const engine = new Engine(artifact);
+    engine.clock.year = engine.range[1] + 1;
+    engine.playing = false;
+    engine.play();
+    expect(engine.clock.year).toBe(engine.range[0]);
+    expect(engine.playing).toBe(true);
+    // And it actually advances afterwards, rather than the clamp firing again
+    // on the very next frame.
+    const before = engine.clock.year;
+    engine.advance(1 / 60);
+    expect(engine.clock.year).toBeGreaterThan(before);
+    expect(engine.playing).toBe(true);
+  });
+
+  it("play() does not seek when playback is not already stopped at the end", () => {
+    const engine = new Engine(artifact);
+    engine.clock.year = 100;
+    engine.play();
+    expect(engine.clock.year).toBe(100);
+    expect(engine.playing).toBe(true);
+  });
+
+  // The finding: `Clock.applied` (what Timeline.activeAt sizes every fade
+  // from) is written only by tick/setAuto/setUserSpeed, none of which run
+  // while paused. Nothing reset it on pause, on the range-end stop, or on a
+  // scrub, so a paused frame kept sizing fades from whatever sprint speed
+  // playback last reached -- up to 152.5 y/s measured on the real dataset,
+  // widening a version's fade to tens of years and holding it there
+  // indefinitely. `engine.pause()` now calls `Clock.resetSpeed()`.
+  it("resets speed to reading speed when paused mid-sprint", () => {
+    const engine = new Engine(artifact);
+    engine.clock.setAuto();
+    // Just past where this fixture's Roman Republic rows end; the next
+    // change is 407, a gap wide enough for Auto to sprint well past
+    // BASE_SPEED (see the -301..407 gap noted below).
+    engine.clock.year = -300;
+    engine.playing = true;
+    for (let i = 0; i < 90; i++) engine.advance(1 / 60);
+    // Without the fix this would still be true after pause() too -- confirm
+    // we actually reached a sprint before testing the reset.
+    expect(engine.clock.speed).toBeGreaterThan(BASE_SPEED * 5);
+    engine.pause();
+    // Without Clock.resetSpeed(), this stays at whatever the sprint reached
+    // (tens of years/second) instead of snapping back to BASE_SPEED (4).
+    expect(engine.clock.speed).toBe(BASE_SPEED);
+  });
+
+  it("resets speed to reading speed after a seek mid-sprint", () => {
+    const engine = new Engine(artifact);
+    engine.clock.setAuto();
+    engine.clock.year = -300;
+    engine.playing = true;
+    for (let i = 0; i < 90; i++) engine.advance(1 / 60);
+    expect(engine.clock.speed).toBeGreaterThan(BASE_SPEED * 5);
+    const frame = engine.seek(0);
+    expect(frame.speed).toBe(BASE_SPEED);
+    expect(engine.clock.speed).toBe(BASE_SPEED);
+  });
+
   it("seeks to an exact year and reports the frame there", () => {
     const engine = new Engine(artifact);
     // Not year 0: this fixture's real coverage has a gap from -301 (end of the

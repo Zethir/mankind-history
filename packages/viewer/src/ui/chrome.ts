@@ -58,7 +58,8 @@ export class Chrome {
     this.scrubber = scrubber;
 
     play.addEventListener("click", () => {
-      engine.playing = !engine.playing;
+      if (engine.playing) engine.pause();
+      else engine.play();
     });
 
     // While a drag is in progress, update() must not fight the user for the
@@ -70,7 +71,7 @@ export class Chrome {
     scrubber.addEventListener("pointerdown", () => {
       this.scrubbing = true;
       this.resumeAfterScrub = engine.playing;
-      engine.playing = false;
+      engine.pause();
     });
     // The release listeners live on window, not the input: a pointer
     // sequence that ends outside the element (or is cancelled by the OS,

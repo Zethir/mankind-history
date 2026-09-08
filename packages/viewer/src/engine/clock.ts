@@ -41,6 +41,20 @@ export class Clock {
     this.applied = speed;
   }
 
+  /**
+   * Snaps `applied` back to this mode's base -- BASE_SPEED in auto, userSpeed
+   * in manual -- so a stopped or jumped clock reports reading speed rather
+   * than whatever sprint it last reached. `applied` is otherwise written only
+   * by tick/setAuto/setUserSpeed, none of which run while paused, so without
+   * this call it stays pinned at its last in-flight value indefinitely: a
+   * fade sized from a frozen sprint speed rather than from what is actually
+   * happening (nothing, since the clock is stopped). Call this from anything
+   * that stops or jumps playback -- pausing and seeking, in particular.
+   */
+  resetSpeed(): void {
+    this.applied = this.mode === "manual" ? this.userSpeed : BASE_SPEED;
+  }
+
   tick(dt: number, nextChange: number | null): void {
     const target = this.targetSpeed(nextChange);
     if (this.mode === "manual" || target <= this.applied) {

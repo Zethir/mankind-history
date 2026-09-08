@@ -63,3 +63,19 @@ design's 20.72 s.
   describes Auto only.
 - Every constant here is provisional. None has yet been judged by a human
   watching the map, which is what the Milestone 1 feel session is for.
+- Because `fadeYears <= extent / 2`, the flash window (`3 * fadeYears`, per
+  `flash.ts`) is always at most the visible window (`extent + fadeYears`) --
+  so the flash can never outlive the version it belongs to, at any speed. A
+  non-obvious guarantee that falls out of the arithmetic rather than being
+  separately enforced.
+- `Clock.speed` is what sizes every version's fade, so it has to describe
+  what is actually happening, not what last happened. Playback stopping --
+  pause, the range-end stop, a scrub -- and playback jumping via `seek()`
+  now snap `Clock.speed` back to this mode's base (`BASE_SPEED` in auto,
+  `userSpeed` in manual). Without it, a clock left at a sprint's speed after
+  stopping kept sizing fades from that sprint indefinitely: a pause mid-sprint
+  on the real dataset (peak measured 152.5 y/s) could hold a 61-year-wide
+  fade on screen at rest, asserting the presence of versions that ceased
+  decades earlier. This amends "constant wall-clock fade keeps the feel
+  identical across speeds" from 0006: fade width now depends on playback
+  state as well as on speed.

@@ -83,7 +83,12 @@ export class Chrome {
       this.scrubbing = false;
       if (this.resumeAfterScrub) {
         this.resumeAfterScrub = false;
-        engine.playing = true;
+        // engine.play(), not `engine.playing = true`: a scrub that lands
+        // exactly on the range end is the same dead-end shape as the play
+        // button at the end (see Engine.play()) -- dragging to the end while
+        // already playing, then releasing, must rewind before resuming
+        // rather than resume into the clamp that immediately re-stops it.
+        engine.play();
       }
     };
     window.addEventListener("pointerup", endScrub);

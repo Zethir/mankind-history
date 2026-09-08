@@ -1,0 +1,83 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Engine > produces stable frames at fixed years > year -322 1`] = `
+{
+  "count": 2,
+  "draws": [
+    "name:Roman Republic@-323 a=0.6250 f=0.0485",
+    "name:Roman Republic@-326 a=0.3333 f=0.0272",
+  ],
+  "mode": "auto",
+  "speed": 4,
+  "year": -322,
+}
+`;
+
+exports[`Engine > produces stable frames at fixed years > year -649 1`] = `
+{
+  "count": 3,
+  "draws": [
+    "name:Etruscans@-650 a=0.6250 f=0.1212",
+    "name:Etruscans@-750 a=0.3750 f=0.0000",
+    "name:Roman Kingdom@-700 a=1.0000 f=0.0000",
+  ],
+  "mode": "auto",
+  "speed": 4,
+  "year": -649,
+}
+`;
+
+exports[`Engine > produces stable frames at fixed years > year 410.5 1`] = `
+{
+  "count": 4,
+  "draws": [
+    "name:Visigoths@407 a=0.6667 f=0.0000",
+    "name:Visigoths@410 a=0.3125 f=0.1419",
+    "name:Western Roman Empire@407 a=0.6667 f=0.0000",
+    "name:Western Roman Empire@410 a=0.3125 f=0.0000",
+  ],
+  "mode": "auto",
+  "speed": 4,
+  "year": 410.5,
+}
+`;
+
+exports[`Engine > produces stable frames at fixed years > year 764 1`] = `
+{
+  "count": 4,
+  "draws": [
+    "name:Kingdom of Italy@757 a=0.3750 f=0.0000",
+    "name:Kingdom of Italy@763 a=0.6250 f=0.0000",
+    "name:Papal States@757 a=0.3750 f=0.0000",
+    "name:Papal States@763 a=0.6250 f=0.3224",
+  ],
+  "mode": "auto",
+  "speed": 4,
+  "year": 764,
+}
+`;
+
+exports[`Engine > produces stable frames at fixed years > year 1000 1`] = `
+{
+  "count": 0,
+  "draws": [],
+  "mode": "auto",
+  "speed": 4,
+  "year": 1000,
+}
+`;
+
+exports[`Engine > produces stable frames at fixed years > year 1938.5 1`] = `
+{
+  "count": 4,
+  "draws": [
+    "name:Kingdom of Italy@1936 a=0.5000 f=0.0000",
+    "name:Kingdom of Italy@1938 a=1.0000 f=0.0000",
+    "name:Nazi Germany@1936 a=0.5000 f=0.0000",
+    "name:Nazi Germany@1938 a=1.0000 f=0.5175",
+  ],
+  "mode": "auto",
+  "speed": 4,
+  "year": 1938.5,
+}
+`;

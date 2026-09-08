@@ -10,8 +10,9 @@
   "scripts": {
     "lint": "biome check --error-on-warnings .",
     "format": "biome check --write .",
-    "typecheck": "tsc -p packages/model && tsc -p packages/pipeline",
+    "typecheck": "tsc -p packages/model && tsc -p packages/pipeline && tsc -p packages/viewer",
     "test": "vitest run --passWithNoTests",
+    "dev": "pnpm --filter @history/viewer dev",
     "fetch:sources": "tsx packages/pipeline/src/cli.ts fetch",
     "build": "NODE_OPTIONS=--max-old-space-size=8192 tsx packages/pipeline/src/cli.ts build",
     "extract-fixture": "tsx packages/pipeline/src/cli.ts extract-fixture",

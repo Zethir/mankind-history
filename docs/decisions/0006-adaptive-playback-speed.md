@@ -1,6 +1,17 @@
 # 0006 — Speed is the only control, and it adapts
 
-**Status:** accepted; D not yet tuned against real data
+**Status:** accepted; three parts amended by 0014
+
+0014 replaces the floor semantics: the user's speed is a setting to honour
+rather than a minimum to exceed, and the adaptive behaviour described below
+moves to an Auto position, which is the default. It also corrects the fade
+formula, and supersedes `D` with `APPROACH_SECONDS` — so `D` is no longer a
+constant awaiting tuning.
+
+The rest of this record stands: fade derived from speed rather than
+configured, density as an input rather than a constraint, deceleration into
+an event, `nextVisibleChange` scoped to the viewport, and the
+accelerated-fraction metric.
 
 ## Context
 

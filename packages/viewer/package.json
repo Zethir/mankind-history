@@ -1,0 +1,18 @@
+{
+  "name": "@history/viewer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "node scripts/stage-data.mjs",
+    "dev": "vite",
+    "prebuild": "node scripts/stage-data.mjs",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@history/model": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "8.2.2"
+  }
+}

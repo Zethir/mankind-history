@@ -340,12 +340,15 @@ unrelated polities sharing a colour read as one invading the other. The first
 fix tried, seeding hue from each polity's longitude rank instead of a hash of
 its id, measurably made this worse: same-colour polities went from 15.8%
 overlapping in longitude on screen to 65.9%. The palette actually shipped is a
-two-tier design -- 30 graph-coloured saturated colours reserved for the ~118
-polities whose territory itself sprawls (so two visible empires never share a
-colour), and a muted hash-assigned palette for everyone else, the two told
-apart by saturation. See decision 0016 for both the failed attempt and the
-measurements behind what replaced it. Still not itself judged by a human
-watching the map.
+two-tier design -- 40 graph-coloured saturated colours reserved for the 136
+polities whose territory itself sprawls, coloured against each other by
+year co-visibility widened by the renderer's own crossfade margin (so two
+visible empires never share a colour, including through a crossfade from one
+into the other), and a muted 36-colour hash-assigned palette for everyone
+else, the two told apart by saturation. See decision 0016 for the failed
+geographic-hue attempt, the crossfade-margin correction, and the full
+measurements behind what shipped. Still not itself judged by a human watching
+the map.
 
 ## Chrome
 

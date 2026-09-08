@@ -12,22 +12,31 @@ async function start(): Promise<void> {
   // canvas.
   app.innerHTML = '<p class="loading">Loading the atlas...</p>';
 
-  let artifacts: Awaited<ReturnType<typeof fetchArtifacts>>;
+  let engine: Engine;
+  let renderer: MapRenderer;
+  let chrome: Chrome;
   try {
-    artifacts = await fetchArtifacts();
+    const artifacts = await fetchArtifacts();
+
+    app.innerHTML = '<canvas id="plate"></canvas><div id="chrome"></div>';
+    const canvas = app.querySelector<HTMLCanvasElement>("#plate");
+    const chromeRoot = app.querySelector<HTMLElement>("#chrome");
+    if (!canvas || !chromeRoot) throw new Error("app shell failed to build");
+
+    engine = new Engine(artifacts.versions);
+    // A throw here (e.g. canvas.ts failing to get a 2D context) must still
+    // land in this catch: outside it, the loading message is already
+    // replaced, so an escaped throw leaves a blank page instead of the error
+    // state below.
+    renderer = new MapRenderer(canvas, artifacts.versions, artifacts.land);
+    chrome = new Chrome(chromeRoot, engine);
   } catch (error) {
-    app.innerHTML = `<p class="error">Could not load the map data: ${String(error)}</p>`;
+    const message = document.createElement("p");
+    message.className = "error";
+    message.textContent = `Could not start the map: ${String(error)}`;
+    app.replaceChildren(message);
     return;
   }
-
-  app.innerHTML = '<canvas id="plate"></canvas><div id="chrome"></div>';
-  const canvas = app.querySelector<HTMLCanvasElement>("#plate");
-  const chromeRoot = app.querySelector<HTMLElement>("#chrome");
-  if (!canvas || !chromeRoot) throw new Error("app shell failed to build");
-
-  const engine = new Engine(artifacts.versions);
-  const renderer = new MapRenderer(canvas, artifacts.versions, artifacts.land);
-  const chrome = new Chrome(chromeRoot, engine);
 
   window.addEventListener("resize", () => renderer.resize());
 
@@ -55,8 +64,10 @@ async function start(): Promise<void> {
       console.error("history map: frame failed", error);
       if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
         stopped = true;
-        const message = `The map stopped after repeated rendering errors: ${String(error)}`;
-        app.innerHTML = `<p class="error">${message}</p>`;
+        const message = document.createElement("p");
+        message.className = "error";
+        message.textContent = `The map stopped after repeated rendering errors: ${String(error)}`;
+        app.replaceChildren(message);
       }
     } finally {
       if (!stopped) requestAnimationFrame(loop);

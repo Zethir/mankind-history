@@ -1,6 +1,22 @@
 import { SPEED_STEPS } from "../engine/constants";
 import type { Engine } from "../engine/engine";
 import type { Frame } from "../engine/frame";
+import type { MapRenderer } from "../render/canvas";
+import type { RenderMode } from "../render/render-mode";
+
+/**
+ * Labelled by effect, not mechanism, so the owner can pick a mode without
+ * reading render-mode.ts: "Off" is today's behaviour (the baseline being
+ * compared against), "Outline" draws the empire's boundary over its
+ * already-coloured components, and "Merged" is the one that actually answers
+ * the motivating question -- French Africa and metropolitan France sharing a
+ * colour -- by having every component borrow its aggregate's colour.
+ */
+const MODE_LABELS: Record<RenderMode, string> = {
+  none: "Off",
+  outline: "Outline",
+  parent: "Merged",
+};
 
 /**
  * Years are negative for BCE in the artifact contract. The readout is
@@ -18,12 +34,14 @@ export class Chrome {
   private readonly play: HTMLButtonElement;
   private readonly scrubber: HTMLInputElement;
   private readonly speeds = new Map<string, HTMLButtonElement>();
+  private readonly modes = new Map<RenderMode, HTMLButtonElement>();
   private scrubbing = false;
   private resumeAfterScrub = false;
 
   constructor(
     root: HTMLElement,
     private readonly engine: Engine,
+    private readonly renderer: MapRenderer,
   ) {
     const [lo, hi] = engine.range;
     root.innerHTML = `
@@ -36,6 +54,12 @@ export class Chrome {
           ${SPEED_STEPS.map((n) => `<button type="button" data-speed="${n}">${n}x</button>`).join(
             "",
           )}
+        </span>
+        <span class="modes">
+          <span class="modes-label">Empires:</span>
+          ${(Object.keys(MODE_LABELS) as RenderMode[])
+            .map((m) => `<button type="button" data-mode="${m}">${MODE_LABELS[m]}</button>`)
+            .join("")}
         </span>
       </div>
       <p class="note">
@@ -105,6 +129,14 @@ export class Chrome {
         else engine.clock.setUserSpeed(Number(value));
       });
     }
+
+    for (const button of root.querySelectorAll<HTMLButtonElement>("[data-mode]")) {
+      const value = button.dataset.mode as RenderMode;
+      this.modes.set(value, button);
+      button.addEventListener("click", () => {
+        renderer.mode = value;
+      });
+    }
   }
 
   /**
@@ -118,6 +150,9 @@ export class Chrome {
     const active = frame.mode === "auto" ? "auto" : String(this.engine.clock.userSpeed);
     for (const [value, button] of this.speeds) {
       button.classList.toggle("on", value === active);
+    }
+    for (const [value, button] of this.modes) {
+      button.classList.toggle("on", value === this.renderer.mode);
     }
   }
 }

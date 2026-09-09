@@ -3,129 +3,137 @@ import { equalEarthInverse } from "@history/model";
 import { FADE_SECONDS, SPEED_STEPS } from "../engine/constants";
 
 /**
- * Two tiers, separated by saturation, not by hue count.
+ * One family palette, not two saturation tiers.
  *
- * The Milestone 1 feel session reported colour as meaningless: distant,
- * unrelated polities sharing a colour read as one having invaded the other, or
- * as a colonial claim the map never actually shows. The first fix tried
- * (decision 0016, original text) seeded hue from longitude so a repeated
- * colour would land on a geographic neighbour instead of a random polity
- * anywhere on Earth. Measured against the real dist/ (1,583 polities, 13,380
- * versions), that made the reported problem WORSE, not better: same-colour
- * pairs simultaneously on screen overlapped in longitude 15.8% of the time
- * under the original hash palette, and 65.9% of the time under geographic hue
- * -- within 20 degrees of each other 94.8% of the time. Ranking every polity
- * on Earth into 12 longitude bands packs each band with whatever happens to
- * sit at that longitude, which is exactly the polities most likely to be
- * on-screen together and therefore most likely to need telling apart. See
- * decision 0016 for the full measurement and the argument against Phase 0's
- * "fewer hues, more lightness" fallback, which this design also departs from.
+ * Decision 0016 split the palette into a saturated "tier 1" (sprawling
+ * empires, graph-coloured for a hard no-collision guarantee) and a muted
+ * "tier 2" (everyone else, hash-assigned), told apart by saturation alone so
+ * an empire could never read as just another local polity. That design is
+ * superseded, not discarded -- the guarantee it exists to make is preserved
+ * below, unchanged in mechanism. What changes is the colour space it draws
+ * from and one new rule: an empire's *members* now render as shades of one
+ * hue, so the group reads as a family instead of a scatter of unrelated
+ * colours. See docs/decisions/0018-family-palette.md for the full argument,
+ * including why this drops tier 2's old guarantee that a sprawling empire
+ * could never coincide with a local polity's exact colour.
  *
- * What actually distinguishes the map's confusions is not "any two polities
- * anywhere" but a much smaller, much more visible set: polities whose
- * territory itself sprawls across the map -- colonial empires, federations,
- * anything that reads on screen as scattered pieces rather than one blob.
- * Those are the ones a repeated colour genuinely misleads about (Portugal's
- * scattered holdings landing on France's colour looks like an invasion),
- * and there are few enough of them (136 in the real data, under this
- * implementation's bbox-based approximation of "sprawls"; at most 29 ever on
- * screen at once, in 1905) to give each one, among its actual on-screen
- * contemporaries, a colour no other sprawling polity shares -- a guarantee
- * decision 0016 could not make for 1,583 polities but can make for 136.
+ * The palette itself: 10 hue families (hue/saturation pairs chosen for 1970s
+ * character -- warm earths at higher saturation, greens and teals muted, no
+ * blues or magentas) x 4 lightness shades = 40 colours total. This replaces
+ * both the old 40-colour tier-1 space and the old 36-colour tier-2 space with
+ * one shared 40-colour space; there is no longer a separate saturation band
+ * for "everyone else."
  *
- * That guarantee has to cover more than the instant two empires are both on
- * screen: `alphaFor` (`engine/fade.ts`) keeps drawing a version through its
- * crossfade tail, `fadeYears` after `toYear + 1`, so two empires whose
- * claimed intervals merely *abut* -- one ending the year the other begins,
- * the common shape of a succession -- are genuinely on screen together for
- * that fade. `CO_VISIBILITY_MARGIN_YEARS` below widens the co-visibility test
- * by that margin, so a colour never repeats across a dissolve either; without
- * it, measured against the real dist/, 39 sprawling pairs within 2 years of
- * each other resolved to the identical colour, most of them exactly the
- * successor-state pairs this margin exists to protect (a British Empire /
- * Commonwealth of Nations transition one year apart, both unmargined-graph
- * non-adjacent, is the canonical example).
+ * Three populations draw from this one space:
  *
- * Tier 1 -- sprawling polities (136 of 1,583, measured against the real
- * dist/): a graph-coloured set of 40 saturated colours, guaranteeing that no
- * two sprawling polities ever on screen together -- including during a
- * crossfade between them -- share a colour. See `SPRAWL_THRESHOLD_DEGREES`,
- * `CO_VISIBILITY_MARGIN_YEARS` and `buildCovisibilityGraph` below for the
- * qualification rule, the margin, and the colouring itself.
+ * 1. Aggregates (any polity ever named by another version's `memberOf` --
+ *    Version.memberOf, schema 2, decision 0017) and ordinary sprawling
+ *    polities (a version's bounding box spans more than
+ *    `SPRAWL_THRESHOLD_DEGREES`) are graph-coloured together against one
+ *    co-visibility graph, margin-widened exactly as decision 0016 specified.
+ *    Aggregates are forced into this graph regardless of their own bounding
+ *    box, using the *union* of their own versions' intervals and every
+ *    member-version's intervals recorded under their name -- an aggregate
+ *    whose own drawn territory is just a small metropole (so it would never
+ *    qualify as "sprawling" on its own bbox) still needs a colour no
+ *    co-visible sprawling neighbour shares, and still needs a family for its
+ *    members to borrow. Folding both populations into one graph is what
+ *    keeps the guarantee true for aggregates too: decision 0016's guarantee
+ *    was "no two sprawling empires share a colour" and an aggregate is
+ *    exactly that, even when none of its own directly-held territory sprawls.
  *
- * Tier 2 -- everything else (roughly 1,447 of 1,583): a muted, desaturated
- * palette assigned by the FNV-1a hash of the polity id, same approach as the
- * original palette, now at 36 colours (up from the previous cut's 24). This
- * tier carries most of the screen -- 174 of the busiest year's 195 polities,
- * 2014 -- so its density matters even though no per-pair guarantee is made
- * for it: at 36 colours, mean 4.83 polities per colour there (worst 10),
- * better than both the 24-colour cut it replaces (mean 7.25, worst 13) and
- * the originally shipped single-tier palette, which spread all 195 of that
- * year's polities across its 32 colours (mean 6.09, worst 12) -- the actual
- * experience the owner watched and reported broken. No graph
- * colouring here: proximity-graph colouring was measured to roughly halve
- * local same-colour overlap for this tier (16.1% down to 8.7%), but needs a
- * load-time computation (a spatial proximity graph over ~1,450 polities and
- * their full version geometry, not just ~136 ids and their bounding boxes)
- * expensive enough to defer. See decision 0016.
+ * 2. Members (a version whose `memberOf` names a polity in population 1) do
+ *    not get their own graph-coloured or hashed colour at all. They borrow
+ *    their aggregate's family (the hue/saturation half of whatever colour
+ *    population 1 assigned it) and pick a shade deterministically within it
+ *    -- see `colourForMember`. This is declination, and it wins over the
+ *    sprawl guarantee for members: a member polity that would otherwise
+ *    qualify as independently sprawling (e.g. a colonial territory whose own
+ *    bounding box spans continents) is excluded from population 1 entirely
+ *    and never competes for a graph-coloured slot, because its colour is
+ *    never independent of its empire's in the first place. The guarantee
+ *    keeps binding non-members, including every aggregate -- see the report
+ *    this shipped with for whether that trade actually produces a visible
+ *    collision on the real data.
  *
- * The two tiers are told apart by saturation alone (tier 1 62%, tier 2 26%),
- * so a sprawling empire never reads as just another local polity even where
- * their hues coincide. Minimum CIE76 deltaE, computed against these exact
- * constants: 15.98 within tier 1, 9.14 within tier 2 -- both above the
- * shipped palette's 8.29, and tier 1's is comfortably above the
- * geographic-hue attempt's 12.9. See decision 0016 for the script and the
- * full grid search.
+ * 3. Everyone else -- compact, unaffiliated polities -- is hash-assigned into
+ *    the same 40-colour space, same mechanism as the old tier 2, just no
+ *    longer desaturated relative to population 1.
  */
 
-/** Degrees of longitude a polity's widest version must span to be tier 1. */
+/** Degrees of longitude a polity's widest version must span to be "sprawling". */
 const SPRAWL_THRESHOLD_DEGREES = 45;
 
 /**
- * How many years past a claimed interval's end two sprawling polities still
- * count as co-visible, because the renderer keeps drawing a fading-out
- * version past `toYear`. Derived from the engine's own constants rather than
- * chosen as a magic number: `FADE_SECONDS * max(SPEED_STEPS)` is
- * 0.4 * 16 = 6.4 years, the longest fade the fixed speed steps ever produce.
- * `Math.ceil` takes that to 7, and one more year of headroom takes it to 8,
- * because Auto mode's adaptive speed (`engine/clock.ts`) can transiently
- * exceed the fixed steps while accelerating toward a distant change --
- * though only while crossing a gap where, by construction, nothing is
- * visibly changing, so this is a safety margin on top of the real worst case
- * rather than a correction to it.
+ * How many years past a claimed interval's end two co-visibility candidates
+ * still count as visible together, because the renderer keeps drawing a
+ * fading-out version past `toYear`. See decision 0016 for the full
+ * derivation: `FADE_SECONDS * max(SPEED_STEPS)` is the longest fade the fixed
+ * speed steps ever produce, `Math.ceil` rounds up, and one more year covers
+ * Auto mode's adaptive speed transiently exceeding the fixed steps.
  */
 const CO_VISIBILITY_MARGIN_YEARS = Math.ceil(FADE_SECONDS * Math.max(...SPEED_STEPS)) + 1;
 
 /**
- * 10 hues x 4 lightness bands = 40 colours. Sized against the real
- * co-visibility graph *with* `CO_VISIBILITY_MARGIN_YEARS` applied: max degree
- * 91, median 35, needing 34 colours to greedy-colour with zero conflicts (a
- * 0-year margin needs only 30, but that is the guarantee without the fade
- * tail this margin exists to close). 40 leaves headroom up to a 16-year
- * margin (which needs 38) rather than sitting exactly at the measured
- * minimum -- 34 reserved colours worked for today's data, but had zero slack
- * for a slightly denser re-blessed dataset or a slightly wider margin, and
- * `tier1Colour`'s modulo fallback means running out silently produces a
- * wrong answer, not a crash. See `warnOnOverflow` for what happens if 40
- * ever turns out not to be enough either.
+ * 10 hue families x 4 lightness shades = 40 colours, picked by measurement
+ * (see the report this shipped with) to maximise CIE76 deltaE within a pool
+ * restricted to hue/saturation pairs plausible for a 1970s poster palette:
+ * warm earths (reds, oranges, golds) at higher saturation, greens and teals
+ * muted, deliberately excluding blues and magentas even though they would
+ * measure better -- that restriction is the period character, not a gap to
+ * fill. Saturations sit below the reference hexes (which run 60-100%,
+ * appropriate for print, not for a screen covered edge-to-edge in polygons).
+ *
+ * Order is not meaningful beyond matching the brief that chose these pairs;
+ * a family's *index* is what the co-visibility graph colours against, same
+ * role `TIER1_HUES`'s hue index played before.
  */
-const TIER1_HUES = 10;
-const TIER1_SATURATION = 62;
-const TIER1_LIGHTNESS = [74, 50, 38, 26];
-const TIER1_COLOUR_COUNT = TIER1_HUES * TIER1_LIGHTNESS.length;
+const FAMILIES: ReadonlyArray<{ readonly hue: number; readonly saturation: number }> = [
+  { hue: 0, saturation: 50 },
+  { hue: 22, saturation: 30 },
+  { hue: 25, saturation: 50 },
+  { hue: 40, saturation: 55 },
+  { hue: 45, saturation: 50 },
+  { hue: 60, saturation: 34 },
+  { hue: 90, saturation: 34 },
+  { hue: 150, saturation: 26 },
+  { hue: 180, saturation: 26 },
+  { hue: 200, saturation: 26 },
+];
+
+/** Lightness ladder, lightest first. Shared by every family. */
+const SHADE_LIGHTNESS: readonly number[] = [74, 58, 42, 28];
+
+const FAMILY_COUNT = FAMILIES.length;
+const SHADE_COUNT = SHADE_LIGHTNESS.length;
 
 /**
- * 12 hues x 3 lightness bands = 36 colours (up from 24), hash-assigned,
- * desaturated so it reads as "not an empire". Widened because this tier
- * carries most of the screen at any density -- see the module doc comment
- * for the measured before/after.
+ * Sized the same way decision 0016 sized `TIER1_COLOUR_COUNT`, re-measured
+ * for this graph now that aggregates are folded into it: the real
+ * co-visibility graph (sprawling polities and aggregates together, margin
+ * widened) has max degree 97, median 35, and needs 36 of these against the
+ * real dist/ (see the report this shipped with) -- denser than decision
+ * 0016's own graph (max degree 91, needing 34) because aggregates add nodes
+ * and edges the old sprawl-only graph never had. 40 still leaves headroom
+ * past that for a denser re-blessed dataset or a wider margin, without
+ * silently wrapping. `warnOnOverflow` is what makes exceeding it observable
+ * instead of a silent wrong answer, unchanged from decision 0016.
  */
-const TIER2_HUES = 12;
-const TIER2_SATURATION = 26;
-const TIER2_LIGHTNESS = [60, 48, 38];
+const COLOUR_COUNT = FAMILY_COUNT * SHADE_COUNT;
 
 export interface Palette {
   colourFor(polityId: string): string;
+  /**
+   * A member's declined colour: a shade of `aggregatePolityId`'s family,
+   * chosen deterministically for `memberPolityId` (see `buildPalette`'s
+   * `memberShadeOf`). Never the same computation as `colourFor` -- a member
+   * does not have an independent graph-coloured or hashed colour of its own
+   * to fall back to; this method is the only source of one for it. Callers
+   * (`colourForDraw`) already know `aggregatePolityId` is a real polity in
+   * this artifact before calling this -- see decision 0017's dangling-name
+   * discussion for why that check has to happen at the call site, not here.
+   */
+  colourForMember(aggregatePolityId: string, memberPolityId: string): string;
 }
 
 /** FNV-1a. Any stable hash works; this one is short and has no dependencies. */
@@ -138,28 +146,30 @@ function hash(s: string): number {
   return h >>> 0;
 }
 
-function tier1Colour(colourIndex: number): string {
-  // Modulo guards colourFor's total-function contract if the real
-  // co-visibility graph ever needed more than TIER1_COLOUR_COUNT colours --
-  // it has not, against the real dist/ (see the report this shipped with),
-  // but colourFor must still return a string rather than throw if a future
-  // dataset's graph is denser than today's. `warnOnOverflow` is what makes
-  // that case observable instead of a silent wrong answer.
-  const i = colourIndex % TIER1_COLOUR_COUNT;
-  const hueIndex = i % TIER1_HUES;
-  const lightnessIndex = Math.floor(i / TIER1_HUES);
-  const hue = (hueIndex * 360) / TIER1_HUES;
-  const lightness = TIER1_LIGHTNESS[lightnessIndex] as number;
-  return `hsl(${hue} ${TIER1_SATURATION}% ${lightness}%)`;
+function familyShadeColour(familyIndex: number, shadeIndex: number): string {
+  const family = FAMILIES[familyIndex] as { hue: number; saturation: number };
+  const lightness = SHADE_LIGHTNESS[shadeIndex] as number;
+  return `hsl(${family.hue} ${family.saturation}% ${lightness}%)`;
 }
 
-function tier2Colour(polityId: string): string {
-  const h = hash(polityId);
-  const hueIndex = h % TIER2_HUES;
-  const lightnessIndex = Math.floor(h / TIER2_HUES) % TIER2_LIGHTNESS.length;
-  const hue = (hueIndex * 360) / TIER2_HUES;
-  const lightness = TIER2_LIGHTNESS[lightnessIndex] as number;
-  return `hsl(${hue} ${TIER2_SATURATION}% ${lightness}%)`;
+/**
+ * Decomposes a graph-colouring index into a family/shade pair. Modulo guards
+ * `colourFor`/`colourForMember`'s total-function contract if the real
+ * co-visibility graph ever needs more than `COLOUR_COUNT` colours -- see
+ * `warnOnOverflow`, which is what makes that case observable instead of a
+ * silent wrong answer.
+ */
+function colourFromIndex(colourIndex: number): string {
+  const i = colourIndex % COLOUR_COUNT;
+  return familyShadeColour(i % FAMILY_COUNT, Math.floor(i / FAMILY_COUNT));
+}
+
+function familyIndexFromColourIndex(colourIndex: number): number {
+  return (colourIndex % COLOUR_COUNT) % FAMILY_COUNT;
+}
+
+function hashColour(polityId: string): string {
+  return colourFromIndex(hash(polityId) % COLOUR_COUNT);
 }
 
 /**
@@ -176,9 +186,9 @@ function tier2Colour(polityId: string): string {
  * have a bounding box that spans almost the full map width even when the
  * underlying shape's real extent is much narrower, because the cut pieces sit
  * near both edges. That overstates span rather than understating it, which
- * only risks placing a few extra polities into tier 1 -- a wasted reservation
- * slot, not a broken guarantee, and one bounded by TIER1_COLOUR_COUNT (see
- * `tier1Colour`).
+ * only risks placing a few extra polities into the sprawl-guarantee pool -- a
+ * wasted reservation slot, not a broken guarantee, and one bounded by
+ * `COLOUR_COUNT` (see `colourFromIndex`).
  */
 function lonSpanDegrees(
   bbox: readonly [number, number, number, number],
@@ -202,14 +212,12 @@ function toIntervals(versions: readonly Version[]): Array<[number, number]> {
  * exactly at fromYear, per decision 0001, not before) is treated as extended
  * by `CO_VISIBILITY_MARGIN_YEARS` for this comparison, so a claim ending
  * right where another begins still counts as co-visible through the
- * crossfade between them (see the module doc comment). Correct for
- * existence-only overlap even if a single polity's own versions overlap each
- * other in time (a data-quality case this does not rule out): whichever
- * interval has the smaller (margin-extended) end is safe to discard
- * permanently once it fails to overlap the other list's current interval,
- * because every later interval in that other list starts no earlier, by
- * construction -- the margin is constant and applied the same way to both
- * lists, so it does not disturb that proof.
+ * crossfade between them. Correct for existence-only overlap even if a
+ * single candidate's own intervals overlap each other (a data-quality case
+ * this does not rule out): whichever interval has the smaller
+ * (margin-extended) end is safe to discard permanently once it fails to
+ * overlap the other list's current interval, because every later interval in
+ * that other list starts no earlier, by construction.
  */
 function intervalsOverlap(a: readonly [number, number][], b: readonly [number, number][]): boolean {
   let i = 0;
@@ -227,23 +235,24 @@ function intervalsOverlap(a: readonly [number, number][], b: readonly [number, n
 }
 
 /**
- * Adjacency among sprawling polities only: two are adjacent if any version of
- * one overlaps in years (within `CO_VISIBILITY_MARGIN_YEARS`) with any
- * version of the other. Built over 136 polities in the real data, not all
- * 1,583 and not all 5,424 years, which is what keeps this cheap enough to run
- * at load time in a browser.
+ * Adjacency among co-visibility candidates only (sprawling polities and
+ * aggregates -- see `buildPalette`): two are adjacent if any interval of one
+ * overlaps in years (within `CO_VISIBILITY_MARGIN_YEARS`) with any interval
+ * of the other. Built over the candidate set only, not every polity in the
+ * artifact, which is what keeps this cheap enough to run at load time in a
+ * browser.
  */
 function buildCovisibilityGraph(
-  sprawlers: readonly string[],
-  intervalsByPolity: ReadonlyMap<string, Array<[number, number]>>,
+  candidates: readonly string[],
+  intervalsById: ReadonlyMap<string, Array<[number, number]>>,
 ): Map<string, Set<string>> {
-  const adjacency = new Map<string, Set<string>>(sprawlers.map((id) => [id, new Set<string>()]));
-  for (let i = 0; i < sprawlers.length; i++) {
-    const a = sprawlers[i] as string;
-    const aIntervals = intervalsByPolity.get(a) as Array<[number, number]>;
-    for (let j = i + 1; j < sprawlers.length; j++) {
-      const b = sprawlers[j] as string;
-      const bIntervals = intervalsByPolity.get(b) as Array<[number, number]>;
+  const adjacency = new Map<string, Set<string>>(candidates.map((id) => [id, new Set<string>()]));
+  for (let i = 0; i < candidates.length; i++) {
+    const a = candidates[i] as string;
+    const aIntervals = intervalsById.get(a) as Array<[number, number]>;
+    for (let j = i + 1; j < candidates.length; j++) {
+      const b = candidates[j] as string;
+      const bIntervals = intervalsById.get(b) as Array<[number, number]>;
       if (intervalsOverlap(aIntervals, bIntervals)) {
         (adjacency.get(a) as Set<string>).add(b);
         (adjacency.get(b) as Set<string>).add(a);
@@ -255,12 +264,9 @@ function buildCovisibilityGraph(
 
 /**
  * Greedy graph colouring: visit nodes by descending degree (the hardest to
- * place first), breaking ties on polity id so the result is deterministic,
- * and give each one the smallest colour index none of its already-coloured
- * neighbours holds. This is the ordering the measurement in decision 0016 was
- * run against -- against the margin-widened real co-visibility graph (max
- * degree 91, median 35) it needs at most 34 colours, not 40 in general and
- * not for greedy colouring in general.
+ * place first), breaking ties on id so the result is deterministic, and give
+ * each one the smallest colour index none of its already-coloured neighbours
+ * holds. Unchanged from decision 0016.
  */
 function greedyColour(adjacency: ReadonlyMap<string, Set<string>>): Map<string, number> {
   const order = [...adjacency.keys()].sort((a, b) => {
@@ -285,43 +291,40 @@ function greedyColour(adjacency: ReadonlyMap<string, Set<string>>): Map<string, 
 }
 
 /**
- * `tier1Colour`'s modulo means an overflow -- more colour indices than
- * `TIER1_COLOUR_COUNT` reserves -- degrades into a silent, wrong answer: two
- * adjacent polities whose indices happen to differ by exactly the reserved
+ * `colourFromIndex`'s modulo means an overflow -- more colour indices than
+ * `COLOUR_COUNT` reserves -- degrades into a silent, wrong answer: two
+ * adjacent candidates whose indices happen to differ by exactly the reserved
  * count would collide, breaking the one guarantee this palette exists to
  * make, with nothing on screen to say so. This warns once per `buildPalette`
- * call so that failure is at least loud: a guarantee that fails silently is
- * worse than one that fails loudly. Not expected against real data -- see the
- * report this shipped with -- but a re-blessed dataset with denser sprawl, or
- * a future increase to `CO_VISIBILITY_MARGIN_YEARS`, could reach it.
+ * call so that failure is at least loud. Not expected against real data (see
+ * the report this shipped with) but a future increase to
+ * `CO_VISIBILITY_MARGIN_YEARS`, or a denser re-blessed dataset, could reach
+ * it -- and folding aggregates into this same graph (new in this revision)
+ * makes it somewhat denser than decision 0016 ever measured, which is
+ * exactly why this check still matters.
  */
 function warnOnOverflow(colourIndexOf: ReadonlyMap<string, number>): void {
   let overflowCount = 0;
   let maxIndex = -1;
   for (const index of colourIndexOf.values()) {
     if (index > maxIndex) maxIndex = index;
-    if (index >= TIER1_COLOUR_COUNT) overflowCount++;
+    if (index >= COLOUR_COUNT) overflowCount++;
   }
   if (overflowCount > 0) {
     console.warn(
-      `palette: tier-1 co-visibility graph needed ${maxIndex + 1} colours, ` +
-        `more than the ${TIER1_COLOUR_COUNT} reserved -- ${overflowCount} ` +
-        "polities wrapped via modulo and may collide with a co-visible neighbour.",
+      `palette: co-visibility graph needed ${maxIndex + 1} colours, ` +
+        `more than the ${COLOUR_COUNT} reserved -- ${overflowCount} ` +
+        "candidates wrapped via modulo and may collide with a co-visible neighbour.",
     );
   }
 }
 
 /**
- * Builds a colour lookup from the dataset itself: which polities qualify as
- * tier 1, and their tier-1 colour assignment, both depend on every polity's
- * versions in this artifact, not just the id being coloured. Tier 2 stays a
- * pure function of the id alone.
- *
- * For each polity, qualifies for tier 1 if any of its versions' bounding
- * boxes spans more than `SPRAWL_THRESHOLD_DEGREES` of longitude (see
- * `lonSpanDegrees`). Tier-1 polities are graph-coloured against each other by
- * year co-visibility (see `buildCovisibilityGraph` and `greedyColour`);
- * everyone else gets a hash-derived tier-2 colour.
+ * Builds a colour lookup from the dataset itself: which polities are
+ * "sprawling", which are aggregates, their graph-coloured assignments, and
+ * every aggregate's member shades all depend on every version in this
+ * artifact, not just the id being coloured. The hash fallback stays a pure
+ * function of the id alone.
  */
 export function buildPalette(versions: VersionsArtifact): Palette {
   const versionsByPolity = new Map<string, Version[]>();
@@ -331,9 +334,40 @@ export function buildPalette(versions: VersionsArtifact): Palette {
     versionsByPolity.set(row.polityId, list);
   }
 
-  const sprawlers: string[] = [];
-  const intervalsByPolity = new Map<string, Array<[number, number]>>();
+  // Every polity ever named by another version's memberOf. `memberVersionsOf`
+  // collects the actual member rows recorded under each aggregate's name --
+  // needed both to widen the aggregate's own co-visibility interval (a
+  // metropole-only aggregate is "live" for as long as any of its members are
+  // drawn, not just while its own version is) and to enumerate its distinct
+  // members for shade cycling below.
+  const memberVersionsOf = new Map<string, Version[]>();
+  for (const row of versions.rows) {
+    if (row.memberOf === null) continue;
+    const list = memberVersionsOf.get(row.memberOf) ?? [];
+    list.push(row);
+    memberVersionsOf.set(row.memberOf, list);
+  }
+  const aggregateIds = [...memberVersionsOf.keys()];
+
+  // Candidates for the shared co-visibility graph: every aggregate (forced
+  // in regardless of its own bounding box -- see the module doc comment) plus
+  // every other polity whose own versions sprawl past the threshold.
+  // Aggregates are excluded from the plain sprawl scan below and handled with
+  // their own (own-versions union member-versions) interval instead, so an
+  // aggregate never enters this loop twice under two different interval sets.
+  const candidateIntervals = new Map<string, Array<[number, number]>>();
+  const candidateIds: string[] = [];
+
+  for (const aggregateId of aggregateIds) {
+    const ownRows = versionsByPolity.get(aggregateId) ?? [];
+    const memberRows = memberVersionsOf.get(aggregateId) ?? [];
+    candidateIntervals.set(aggregateId, toIntervals([...ownRows, ...memberRows]));
+    candidateIds.push(aggregateId);
+  }
+
+  const aggregateIdSet = new Set(aggregateIds);
   for (const [polityId, polityVersions] of versionsByPolity) {
+    if (aggregateIdSet.has(polityId)) continue;
     let sprawling = false;
     for (const v of polityVersions) {
       const bbox = versions.geometry[v.id]?.bbox;
@@ -343,23 +377,61 @@ export function buildPalette(versions: VersionsArtifact): Palette {
       }
     }
     if (sprawling) {
-      sprawlers.push(polityId);
-      intervalsByPolity.set(polityId, toIntervals(polityVersions));
+      candidateIds.push(polityId);
+      candidateIntervals.set(polityId, toIntervals(polityVersions));
     }
   }
 
-  const adjacency = buildCovisibilityGraph(sprawlers, intervalsByPolity);
+  const adjacency = buildCovisibilityGraph(candidateIds, candidateIntervals);
   const colourIndexOf = greedyColour(adjacency);
   warnOnOverflow(colourIndexOf);
 
-  const tier1Colours = new Map<string, string>();
-  for (const [polityId, colourIndex] of colourIndexOf) {
-    tier1Colours.set(polityId, tier1Colour(colourIndex));
+  const graphColours = new Map<string, string>();
+  for (const [id, colourIndex] of colourIndexOf) {
+    graphColours.set(id, colourFromIndex(colourIndex));
+  }
+
+  const familyOfAggregate = new Map<string, number>();
+  for (const aggregateId of aggregateIds) {
+    const colourIndex = colourIndexOf.get(aggregateId) as number;
+    familyOfAggregate.set(aggregateId, familyIndexFromColourIndex(colourIndex));
+  }
+
+  // Each aggregate's distinct members, sorted for a deterministic cycle
+  // position. Shade repeats inside one empire past the 4th member are
+  // expected and acceptable, not a bug to fix: the shared hue already says
+  // "same empire," and the ordinary per-polity outline (canvas.ts) separates
+  // any two neighbours that land on the same shade. Median empire-year in
+  // the real data has 2 members and the max is 20, so most empires never
+  // reach a repeat at all.
+  const memberShadeOf = new Map<string, Map<string, number>>();
+  for (const aggregateId of aggregateIds) {
+    const distinctMembers = [
+      ...new Set((memberVersionsOf.get(aggregateId) ?? []).map((v) => v.polityId)),
+    ];
+    distinctMembers.sort();
+    const shadeOf = new Map<string, number>();
+    distinctMembers.forEach((memberId, index) => {
+      shadeOf.set(memberId, index % SHADE_COUNT);
+    });
+    memberShadeOf.set(aggregateId, shadeOf);
   }
 
   return {
     colourFor(polityId: string): string {
-      return tier1Colours.get(polityId) ?? tier2Colour(polityId);
+      return graphColours.get(polityId) ?? hashColour(polityId);
+    },
+    colourForMember(aggregatePolityId: string, memberPolityId: string): string {
+      const family = familyOfAggregate.get(aggregatePolityId);
+      if (family === undefined) {
+        // Defensive only: every memberOf value observed above is guaranteed
+        // a family, since aggregateIds is built from exactly the same rows.
+        // Kept so this method stays total rather than throwing if that
+        // invariant is ever violated by a future caller.
+        return hashColour(memberPolityId);
+      }
+      const shade = memberShadeOf.get(aggregatePolityId)?.get(memberPolityId) ?? 0;
+      return familyShadeColour(family, shade);
     },
   };
 }

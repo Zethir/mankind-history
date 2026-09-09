@@ -9,29 +9,45 @@ import { fitWorld, toScreen, type Viewport } from "./transform";
  * Three ground tones and nothing else, per decision 0003. The middle tone is
  * also the coverage diagnostic: a year where the plate is mostly bare land is
  * a year the dataset is thin, visible at a glance with no separate overlay.
+ *
+ * Kept unchanged for the 1970s family palette (docs/decisions/0018), judged
+ * rather than re-measured: both are cool, dark, low-saturation blue-grays
+ * (SEA hsl(210 41% 11%), LAND hsl(214 20% 21%)), while every territory family
+ * is either warm or a muted green/teal at meaningfully higher lightness and a
+ * different hue -- the closest is the teal family's darkest shade,
+ * hsl(200 26% 28%), still 7 points lighter and 6 points more saturated than
+ * LAND with a 14-degree hue gap, and every fill also gets its own dark
+ * OUTLINE seam on top. FLASH's cream (hsl(44 87% 94%)) already reads as
+ * exactly the period cream the brief's reference palettes call for, so it
+ * needed no change either -- a fortunate coincidence, not a redesign.
  */
 const SEA = "#101b26";
 const LAND = "#2b3440";
 const FLASH = "#fdf6e3";
 /**
  * Stroked around every filled polity, after the fill, so two neighbours that
- * land on the same palette colour (decision 0016: only the ~136 sprawling
- * empires get a graph-coloured guarantee, from 40 reserved colours; roughly
- * 1,450 compact polities still share a muted palette by hash, so repeats
- * among neighbours are expected) read as separate shapes instead of merging
- * into one blob. Darker than both ground tones -- LAND is #2b3440, SEA is
- * #101b26 -- so it reads as a seam on every fill, including the darkest
- * palette lightness band, rather than disappearing into the plate the way a
- * mid-tone stroke would over SEA.
+ * land on the same palette colour (declination deliberately repeats shades
+ * within one empire past 4 members, and the hash-assigned remainder can
+ * still collide by chance -- see docs/decisions/0018) read as separate
+ * shapes instead of merging into one blob. Darker than both ground tones --
+ * LAND is #2b3440, SEA is #101b26 -- so it reads as a seam on every fill,
+ * including the darkest palette lightness band, rather than disappearing
+ * into the plate the way a mid-tone stroke would over SEA.
  */
 const OUTLINE = "#04070a";
 
 /**
  * Heavier than the ordinary per-polity outline (1) so an aggregate's boundary
- * reads as a deliberate "this is the empire" mark in "outline" mode, not just
- * another polity seam.
+ * still reads as a deliberate "this is the empire" mark in "outline" mode,
+ * not just another polity seam -- but only just heavier. The family palette
+ * (docs/decisions/0018-family-palette.md) already does most of the work of
+ * saying "these are one empire" by shading every member the same hue, so the
+ * stroke no longer has to carry that signal alone the way it did at 3px;
+ * 1.5px is enough to separate "this line means something" from the ordinary
+ * 1px seam without the outline mode reading as busier than the fill colours
+ * underneath it.
  */
-const AGGREGATE_OUTLINE_WIDTH = 3;
+const AGGREGATE_OUTLINE_WIDTH = 1.5;
 
 export class MapRenderer {
   readonly viewport: Viewport;

@@ -83,10 +83,14 @@ guessed:
 Neither figure says anything about whether the playback feel or the palette
 hold up at that density. The original 16-hue palette was watched and reported
 broken; a geographic-hue replacement was tried and measured to be worse, not
-better (decision 0016); the two-tier palette that replaced both has not itself
-been judged by a human watching the map run against the real dataset, and that
-judgement is Milestone 1's exit condition, not something this document can
-assert on its behalf.
+better (decision 0016); the two-tier palette that replaced both shipped, and
+has since itself been superseded by a 1970s family palette (decision 0018)
+that keeps 0016's sprawl guarantee but varies saturation by hue family
+instead of by tier, and shades an empire's members from one hue instead of
+giving each an unrelated colour. Neither palette has been judged by a human
+watching the map run against the real dataset, and that judgement is
+Milestone 1's exit condition, not something this document can assert on its
+behalf.
 
 ## The canonical model
 

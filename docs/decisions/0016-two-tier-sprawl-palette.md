@@ -1,8 +1,17 @@
 # 0016 — Two tiers, separated by saturation: sprawling empires graph-coloured, everyone else hashed
 
-**Status:** accepted (this record was originally written for a geographic-hue
-design that was rejected before shipping; that history is summarised below,
-not kept in full -- see git history for the original text if needed)
+**Status:** superseded by decision 0018 (this record was originally written
+for a geographic-hue design that was rejected before shipping; that history
+is summarised below, not kept in full -- see git history for the original
+text if needed)
+
+**Superseded, not discarded:** decision 0018 (the 1970s family palette)
+keeps this record's central guarantee -- no two sprawling empires ever on
+screen together share a colour, via the same graph-coloured co-visibility
+mechanism -- but replaces the saturation-based two-tier split with hue
+families, and drops the guarantee that a sprawling empire could never
+coincide with a local polity's exact colour, which depended on that
+saturation split. See 0018 for the argument and what it costs.
 
 ## Context
 

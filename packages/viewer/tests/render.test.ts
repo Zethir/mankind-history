@@ -111,12 +111,12 @@ describe("palette", () => {
 
   // Test 3: determinism. Building the palette twice from the same artifact
   // must be byte-identical for every polity. Colour is not a pure function of
-  // the id alone -- tier-1 membership and its colour index both depend on
-  // every polity's versions in this artifact (see decision 0016) -- so this
-  // is a separate guarantee from the self-equality test above. It is the one
-  // that would catch a Map/Set iteration order dependency, an unstable sort,
-  // or greedy colouring visiting nodes in a non-deterministic tie-break
-  // order.
+  // the id alone -- sprawl/aggregate candidacy and colour index both depend
+  // on every polity's versions in this artifact (see decision 0018) -- so
+  // this is a separate guarantee from the self-equality test above. It is
+  // the one that would catch a Map/Set iteration order dependency, an
+  // unstable sort, or greedy colouring visiting nodes in a non-deterministic
+  // tie-break order.
   it("builds the same colours twice from the same artifact", () => {
     const first = buildPalette(versions);
     const second = buildPalette(versions);
@@ -129,40 +129,41 @@ describe("palette", () => {
   // self-equality: `colourFor(p.id) === colourFor(p.id)` cannot fail for any
   // pure function, and the sibling tests derive their expectation from the
   // same id they colour, so neither can catch a changed palette. This golden
-  // vector is the deliberate diff: a feel-session tweak to a saturation or
+  // vector is the deliberate diff: a feel-session tweak to a hue or
   // lightness constant shows up here as a failing object-diff naming every
   // polity whose colour moved, rather than passing silently. Verified by
-  // temporarily changing TIER1_SATURATION from 62 to 60 -- see the report
+  // temporarily changing FAMILIES[0]'s hue from 0 to 5 -- see the report
   // this shipped with for both the failing and the restored-green run.
   //
-  // Regenerated for the two-tier palette. Three of these twelve fixture
-  // polities turn out to qualify for tier 1 (a version bounding box spanning
-  // more than 45 degrees of longitude): Eastern Roman Empire (Justinian's
-  // African and Italian reconquest, 536-554, spans ~47 degrees), Kingdom of
-  // Italy (a small Tianjin concession held 1901-1943 alongside the mainland
-  // pushes several of its interwar versions past 110 degrees), and Nazi
-  // Germany (occupied territory reaching from France to deep in the occupied
-  // USSR, 45.42 degrees at its widest version -- only 0.42 above the
-  // threshold, computed and confirmed, not eyeballed). This was not expected
-  // going in -- see the report for the full check of whether this fixture
-  // has any sprawling polity at all -- and it means this fixture happens to
-  // also exercise the tier-1 guarantee for real: Kingdom of Italy and Nazi
-  // Germany are both tier 1 and genuinely co-visible (1936-1943), and get
-  // different colours (hue 0 vs hue 36) below.
+  // Regenerated for the 1970s family palette (decision 0018). Three of these
+  // twelve fixture polities qualify as sprawling (a version bounding box
+  // spanning more than 45 degrees of longitude): Eastern Roman Empire
+  // (Justinian's African and Italian reconquest, 536-554, spans ~47
+  // degrees), Kingdom of Italy (a small Tianjin concession held 1901-1943
+  // alongside the mainland pushes several of its interwar versions past 110
+  // degrees), and Nazi Germany (occupied territory reaching from France to
+  // deep in the occupied USSR, 45.42 degrees at its widest version -- only
+  // 0.42 above the threshold, computed and confirmed, not eyeballed). None
+  // of the fixture's polities carry a non-null memberOf (measured against
+  // fixtures/dist), so declination never fires here -- see the synthetic
+  // declination tests below for that. This fixture still exercises the
+  // sprawl guarantee for real: Kingdom of Italy and Nazi Germany are both
+  // sprawling and genuinely co-visible (1936-1943), and get different
+  // colours (family 0 vs family 1) below.
   it("matches the committed golden colours for the fixture's polities", () => {
     const golden: Record<string, string> = {
-      "name:Eastern Roman Empire": "hsl(0 62% 74%)",
-      "name:Etruscans": "hsl(180 26% 38%)",
-      "name:Kingdom of Italy": "hsl(0 62% 74%)",
-      "name:Nazi Germany": "hsl(36 62% 74%)",
-      "name:Ostrogothic Kingdom": "hsl(180 26% 60%)",
-      "name:Papal States": "hsl(300 26% 60%)",
-      "name:Republic of Italy": "hsl(180 26% 60%)",
-      "name:Roman Kingdom": "hsl(120 26% 60%)",
-      "name:Roman Republic": "hsl(210 26% 38%)",
-      "name:Vandal Kingdom": "hsl(90 26% 48%)",
-      "name:Visigoths": "hsl(0 26% 38%)",
-      "name:Western Roman Empire": "hsl(30 26% 38%)",
+      "name:Eastern Roman Empire": "hsl(0 50% 74%)",
+      "name:Etruscans": "hsl(45 50% 58%)",
+      "name:Kingdom of Italy": "hsl(0 50% 74%)",
+      "name:Nazi Germany": "hsl(22 30% 74%)",
+      "name:Ostrogothic Kingdom": "hsl(25 50% 74%)",
+      "name:Papal States": "hsl(180 26% 58%)",
+      "name:Republic of Italy": "hsl(0 50% 28%)",
+      "name:Roman Kingdom": "hsl(45 50% 74%)",
+      "name:Roman Republic": "hsl(200 26% 58%)",
+      "name:Vandal Kingdom": "hsl(150 26% 74%)",
+      "name:Visigoths": "hsl(180 26% 74%)",
+      "name:Western Roman Empire": "hsl(40 55% 28%)",
     };
     const palette = buildPalette(versions);
     const actual: Record<string, string> = {};
@@ -194,7 +195,7 @@ describe("palette", () => {
   });
 
   // Kingdom of Italy and Nazi Germany (see the golden-vector comment above)
-  // are both tier 1 and were both really on the map at the same time
+  // are both sprawling and were both really on the map at the same time
   // (1936-1943). This is the guarantee, observed on real, if small, data
   // rather than constructed data: it would be a coincidence for the golden
   // vector above to keep passing if this regressed, but that test does not
@@ -202,18 +203,17 @@ describe("palette", () => {
   //
   // Nazi Germany's widest version spans 45.42 degrees, only 0.42 above
   // SPRAWL_THRESHOLD_DEGREES -- a fragile margin. A regression that dropped
-  // it to tier 2 would still pass a bare colour inequality (the tiers use
-  // disjoint saturations, so a tier-1/tier-2 pair is trivially unequal too),
-  // silently stopping this test from testing the guarantee it names. Both
-  // saturations are pinned to tier 1's 62% first so that failure mode is
-  // itself caught.
+  // it out of the sprawl candidate pool would fall through to the hash
+  // fallback instead, which could coincidentally still differ from Italy's
+  // colour -- so this cannot, on its own, prove sprawl status the way the
+  // old two-tier saturation check could. The golden-vector test above is
+  // what actually pins Nazi Germany's exact colour (and therefore its
+  // candidacy); this test only names the co-visibility guarantee alongside
+  // it.
   it("gives the fixture's one genuinely co-visible sprawling pair different colours", () => {
     const palette = buildPalette(versions);
     const italy = palette.colourFor("name:Kingdom of Italy");
     const germany = palette.colourFor("name:Nazi Germany");
-    const saturationOf = (colour: string) => /^hsl\([\d.]+ (\d+)%/.exec(colour)?.[1];
-    expect(saturationOf(italy), "Kingdom of Italy must be tier 1").toBe("62");
-    expect(saturationOf(germany), "Nazi Germany must be tier 1").toBe("62");
     expect(italy).not.toBe(germany);
   });
 });
@@ -236,16 +236,23 @@ function bboxSpanningDegrees(
   return [Math.round(xMin * coordScale), 0, Math.round(xMax * coordScale), 0];
 }
 
-function makeVersion(id: string, polityId: string, fromYear: number, toYear: number): Version {
+function makeVersion(
+  id: string,
+  polityId: string,
+  fromYear: number,
+  toYear: number,
+  memberOf: string | null = null,
+): Version {
   return {
     id,
     polityId,
     fromYear,
     toYear,
     area: 1000,
-    // Schema 2 added membership. These synthetic polities stand alone: none is
-    // a member of an aggregate, which is what the palette tests are about.
-    memberOf: null,
+    // Schema 2 added membership (decision 0017). Defaults to null -- most of
+    // this file's synthetic polities stand alone -- but the declination
+    // tests below pass an aggregate id explicitly.
+    memberOf,
     prevId: null,
     delta: null,
     gap: null,
@@ -263,13 +270,13 @@ function makeGeometry(bbox: [number, number, number, number]): VersionGeometry {
  * threshold) all visible in the same years, 1900-1950, plus one compact
  * polity (span 5 degrees) visible over the same span.
  *
- * The fixture's real tier-1 polities (see the golden-vector test) are too few
- * and too historically scattered in time to exercise this on their own: the
- * one genuinely co-visible real pair is exactly two polities, which is not
- * enough to guarantee catching a broken implementation, only enough to notice
- * if this particular one broke. This synthetic artifact is built to fail
- * against the pre-decision-0016 hash-only implementation on purpose -- see
- * the guarantee test below for exactly how.
+ * The fixture's real sprawling polities (see the golden-vector test) are too
+ * few and too historically scattered in time to exercise this on their own:
+ * the one genuinely co-visible real pair is exactly two polities, which is
+ * not enough to guarantee catching a broken implementation, only enough to
+ * notice if this particular one broke. This synthetic artifact is built to
+ * fail against a bare hash-only implementation on purpose -- see the
+ * guarantee test below for exactly how.
  */
 const SPRAWL_IDS = [
   "name:Sprawler 0",
@@ -299,51 +306,32 @@ function buildSyntheticArtifact(): VersionsArtifact {
   return { schemaVersion: 1, level: "coarse", coordScale, rows, geometry };
 }
 
-describe("palette: tier-1 sprawl guarantee (synthetic artifact)", () => {
-  // Test 1: the guarantee, and the one that matters most in this file.
-  //
-  // All six ids below share one year range (1900-1950), so every pair is
-  // co-visible and none may share a colour. This is deliberately constructed
-  // to fail against the palette this change replaces: under the
-  // pre-decision-0016 implementation (`hash(id) % 16` for hue, `hash(id)`
-  // again for one of two lightness bands, no notion of co-visibility at
-  // all), FNV-1a puts "name:Sprawler 0" and "name:Sprawler 39" in the exact
-  // same hue/lightness bucket -- both resolve to the byte-identical
-  // "hsl(45 34% 62%)" -- and separately puts "name:Sprawler 1",
-  // "name:Sprawler 38" and "name:Sprawler 74" all in another shared bucket,
-  // "hsl(112.5 34% 52%)". Confirmed by running that exact formula
-  // (`packages/viewer/src/render/palette.ts` as of commit `6f52e13`) against
-  // these six ids. A palette that goes back to colouring tier-1 polities by a
-  // bare hash of the id, without the co-visibility graph, reproduces that
-  // collision and fails this test.
+describe("palette: sprawl guarantee (synthetic artifact)", () => {
+  // The guarantee, and the one that matters most in this file. All six ids
+  // below share one year range (1900-1950), so every pair is co-visible and
+  // none may share a colour. This is deliberately constructed to fail
+  // against a bare-hash palette with no notion of co-visibility at all: a
+  // palette that goes back to colouring sprawling polities by a hash of the
+  // id, without the co-visibility graph, reproduces a same-bucket collision
+  // among these six and fails this test.
   it("gives every simultaneously-visible sprawling polity its own colour", () => {
     const palette = buildPalette(buildSyntheticArtifact());
     const colours = SPRAWL_IDS.map((id) => palette.colourFor(id));
     expect(new Set(colours).size).toBe(SPRAWL_IDS.length);
   });
 
-  // Test 2: tier separation. A sprawling polity and a compact one must never
-  // resolve to the same colour string, so an empire can never read as just
-  // another local polity. Saturation is what actually separates the tiers
-  // (62% vs 26%), so this also pins that "Compact A" -- which happens to
-  // land in the same hue band as one of the sprawlers -- is still told apart
-  // by saturation alone.
-  it("never gives a sprawling polity the same colour as a compact one", () => {
-    const palette = buildPalette(buildSyntheticArtifact());
-    const compactColour = palette.colourFor(COMPACT_ID);
-    for (const id of SPRAWL_IDS) {
-      expect(palette.colourFor(id), id).not.toBe(compactColour);
-    }
-    const compactSaturation = /^hsl\([\d.]+ (\d+)%/.exec(compactColour)?.[1];
-    expect(compactSaturation).toBe("26");
-    for (const id of SPRAWL_IDS) {
-      const sprawlSaturation = /^hsl\([\d.]+ (\d+)%/.exec(palette.colourFor(id))?.[1];
-      expect(sprawlSaturation, id).toBe("62");
-    }
-  });
+  // Decision 0018 deliberately drops decision 0016's old guarantee that a
+  // sprawling polity and a compact one could never share a colour string --
+  // that guarantee was enforced purely by giving each population a disjoint
+  // saturation, and this palette varies saturation by hue family instead, so
+  // both populations now draw from the identical 40-colour space. There is
+  // no test here asserting "Compact A never equals a sprawler's colour"
+  // because that is no longer a guarantee this palette makes; see decision
+  // 0018's Consequences section for the argument and the real-data check of
+  // how often it actually happens.
 
   // Determinism, re-checked against the synthetic artifact: the real-fixture
-  // version of this test (above) has only three tier-1 polities and no
+  // version of this test (above) has only three sprawling polities and no
   // co-visible clique larger than two, so it exercises greedy colouring's
   // ordering far less than a six-node mutually-adjacent graph does.
   it("builds the same colours twice from the same synthetic artifact", () => {
@@ -357,12 +345,129 @@ describe("palette: tier-1 sprawl guarantee (synthetic artifact)", () => {
 });
 
 /**
- * 41 sprawling polities (one more than TIER1_COLOUR_COUNT's 40), all
- * mutually co-visible (same 1900-1950 year range for every one of them), so
- * the co-visibility graph is a complete graph on 41 nodes. Greedy colouring a
- * complete graph always needs exactly as many colours as nodes -- every pair
- * is adjacent, so no two can ever share an index -- which forces colour
- * indices 0..40, one past the 40 reserved.
+ * Declination (decision 0018): a version whose `memberOf` names an aggregate
+ * takes a shade of that aggregate's family instead of an independent colour.
+ * `fixtures/dist` has zero rows with a non-null `memberOf` (measured), so
+ * none of the tests above exercise this at all -- a test suite that never
+ * built an artifact with real membership could pass vacuously forever. This
+ * synthetic artifact is the only place declination is actually checked.
+ */
+function buildDeclinationArtifact(memberCount: number): {
+  artifact: VersionsArtifact;
+  aggregateId: string;
+  memberIds: string[];
+  soloId: string;
+} {
+  const coordScale = 100_000;
+  const rows: Version[] = [];
+  const geometry: Record<string, VersionGeometry> = {};
+  const smallBbox = makeGeometry(bboxSpanningDegrees(5, coordScale));
+
+  const aggregateId = "name:(Test Empire)";
+  rows.push(makeVersion(`${aggregateId}@1900`, aggregateId, 1900, 1950));
+  geometry[`${aggregateId}@1900`] = smallBbox;
+
+  const memberIds = Array.from({ length: memberCount }, (_, i) => `name:Member ${i}`);
+  for (const memberId of memberIds) {
+    const versionId = `${memberId}@1900`;
+    rows.push(makeVersion(versionId, memberId, 1900, 1950, aggregateId));
+    geometry[versionId] = smallBbox;
+  }
+
+  // A wholly unrelated, unaffiliated polity, present in the same artifact so
+  // a test can check the aggregate group's presence does not leak into it.
+  const soloId = "name:Solo Colony";
+  rows.push(makeVersion(`${soloId}@1900`, soloId, 1900, 1950));
+  geometry[`${soloId}@1900`] = smallBbox;
+
+  return {
+    artifact: { schemaVersion: 2, level: "coarse", coordScale, rows, geometry },
+    aggregateId,
+    memberIds,
+    soloId,
+  };
+}
+
+describe("palette: declination (synthetic artifact)", () => {
+  // A member resolves to a shade of its aggregate's family, not an
+  // independent colour. The aggregate's own colourFor is itself
+  // family-consistent (see palette.ts's module doc comment), so this checks
+  // the member's colourForMember result shares the exact same hue/saturation
+  // prefix as the aggregate's colourFor result. A wrong value here -- for
+  // example the member falling through to its own hash colour instead of
+  // declining -- would produce an unrelated hue such as "hsl(90 34% ...)"
+  // instead of one starting with the aggregate's "hsl(0 50% ...)".
+  it("resolves a member to a shade of its aggregate's family", () => {
+    const { artifact, aggregateId, memberIds } = buildDeclinationArtifact(1);
+    const palette = buildPalette(artifact);
+    const aggregateColour = palette.colourFor(aggregateId);
+    const familyPrefix = /^hsl\(\d+ \d+%/.exec(aggregateColour)?.[0];
+    const memberColour = palette.colourForMember(aggregateId, memberIds[0] as string);
+    expect(memberColour.startsWith(familyPrefix as string), memberColour).toBe(true);
+  });
+
+  // Two members of one aggregate (3 members here, comfortably <=4) share the
+  // family's hue/saturation but differ in shade, so the pair reads as one
+  // empire made of distinguishable pieces rather than one flat colour. A
+  // wrong value here would be two members returning the byte-identical
+  // colour (declination not cycling shades at all) or two different hues
+  // (declination not sharing the family at all).
+  it("gives two members of a small aggregate the same hue but different shades", () => {
+    const { artifact, aggregateId, memberIds } = buildDeclinationArtifact(3);
+    const palette = buildPalette(artifact);
+    const colours = memberIds.map((id) => palette.colourForMember(aggregateId, id));
+    const huesAndSats = colours.map((c) => /^hsl\((\d+) (\d+)%/.exec(c)?.slice(1, 3).join("/"));
+    expect(new Set(huesAndSats).size, "all members must share one hue/saturation").toBe(1);
+    expect(new Set(colours).size, "all members must differ").toBe(memberIds.length);
+  });
+
+  // A non-member is unaffected by declination or by the presence of an
+  // aggregate group in the same artifact: built alongside three members of
+  // "Test Empire", "Solo Colony" gets exactly the colour it would get built
+  // completely alone. A wrong value here would mean the aggregate/member
+  // bookkeeping is leaking into ordinary hash-fallback colouring -- for
+  // example if the candidate set were built incorrectly and pulled Solo
+  // Colony into it.
+  it("leaves a non-member's colour unaffected by an aggregate group in the same artifact", () => {
+    const { artifact, soloId } = buildDeclinationArtifact(3);
+    const withGroup = buildPalette(artifact).colourFor(soloId);
+
+    const soloOnly: VersionsArtifact = {
+      schemaVersion: 2,
+      level: "coarse",
+      coordScale: artifact.coordScale,
+      rows: artifact.rows.filter((r) => r.polityId === soloId),
+      geometry: Object.fromEntries(
+        Object.entries(artifact.geometry).filter(([id]) => id.startsWith(soloId)),
+      ),
+    };
+    const alone = buildPalette(soloOnly).colourFor(soloId);
+
+    expect(withGroup).toBe(alone);
+  });
+
+  // The >4-member case named in the brief: a 5th member must repeat an
+  // earlier member's exact shade (the cycle wraps at SHADE_COUNT = 4), not
+  // get a fifth distinct one that does not exist. A wrong value here would
+  // be five mutually distinct colours (declination not cycling at all, or
+  // silently growing the shade ladder) instead of member 4 exactly
+  // repeating member 0.
+  it("repeats a shade once an aggregate exceeds 4 members", () => {
+    const { artifact, aggregateId, memberIds } = buildDeclinationArtifact(5);
+    const palette = buildPalette(artifact);
+    const first = palette.colourForMember(aggregateId, memberIds[0] as string);
+    const fifth = palette.colourForMember(aggregateId, memberIds[4] as string);
+    expect(fifth).toBe(first);
+  });
+});
+
+/**
+ * 41 sprawling polities (one more than the palette's 40-colour reservation),
+ * all mutually co-visible (same 1900-1950 year range for every one of them),
+ * so the co-visibility graph is a complete graph on 41 nodes. Greedy
+ * colouring a complete graph always needs exactly as many colours as nodes
+ * -- every pair is adjacent, so no two can ever share an index -- which
+ * forces colour indices 0..40, one past the 40 reserved.
  */
 const OVERFLOW_IDS = Array.from({ length: 41 }, (_, i) => `name:Overflow ${i}`);
 
@@ -378,14 +483,14 @@ function buildOverflowArtifact(): VersionsArtifact {
   return { schemaVersion: 1, level: "coarse", coordScale, rows, geometry };
 }
 
-describe("palette: tier-1 colour-reservation overflow", () => {
+describe("palette: colour-reservation overflow", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  // TIER1_COLOUR_COUNT (40) has never been exceeded against real data (see
-  // the report this shipped with: 34 of 40 used at the real dist/'s 8-year
-  // margin), so nothing else in this suite exercises `warnOnOverflow`. An
+  // The 40-colour reservation has never been exceeded against real data (see
+  // the report this shipped with), so nothing else in this suite exercises
+  // `warnOnOverflow`. An
   // overflow guard nobody has ever seen fire is a guard nobody knows works --
   // exactly the silent-failure mode it exists to replace -- so this forces it
   // with a complete graph one node larger than the reservation and checks
@@ -407,10 +512,11 @@ describe("palette: tier-1 colour-reservation overflow", () => {
     }
     // The failure mode the warning exists to announce: with 41 mutually
     // adjacent polities and only 40 reserved colours, the modulo wraparound
-    // in tier1Colour necessarily collides colour index 40 with index 0, so
-    // not all 41 colours can be distinct. If this ever started passing with
-    // 41 distinct colours, TIER1_COLOUR_COUNT would have silently grown and
-    // this test would no longer be exercising the overflow path at all.
+    // in colourFromIndex necessarily collides colour index 40 with index 0,
+    // so not all 41 colours can be distinct. If this ever started passing
+    // with 41 distinct colours, the 40-colour reservation would have
+    // silently grown and this test would no longer be exercising the
+    // overflow path at all.
     expect(new Set(colours).size).toBeLessThan(OVERFLOW_IDS.length);
   });
 });

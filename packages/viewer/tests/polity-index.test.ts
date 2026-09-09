@@ -1,7 +1,7 @@
 import type { VersionsArtifact } from "@history/model";
 import { readArtifact } from "@history/model/artifact";
 import { describe, expect, it } from "vitest";
-import { colourFor } from "../src/render/palette";
+import { buildPalette } from "../src/render/palette";
 import { buildPolityIndex } from "../src/render/polity-index";
 
 // Fixture: 47 rows, 12 polities, 11 with more than one version (one with 12).
@@ -20,8 +20,9 @@ describe("buildPolityIndex", () => {
   // the draw loop composing it with colourFor) ever used a version id where a
   // polity id belonged, two versions of the same polity would hash to two
   // different colours, and this is exactly what would fail.
-  it("resolves every version of a multi-version polity through colourFor to one colour", () => {
+  it("resolves every version of a multi-version polity through the palette to one colour", () => {
     const index = buildPolityIndex(versions);
+    const palette = buildPalette(versions);
     const versionsByPolity = new Map<string, string[]>();
     for (const row of versions.rows) {
       const ids = versionsByPolity.get(row.polityId) ?? [];
@@ -37,7 +38,7 @@ describe("buildPolityIndex", () => {
         versionIds.map((versionId) => {
           const resolved = index.get(versionId);
           expect(resolved, versionId).toBeDefined();
-          return colourFor(resolved as string);
+          return palette.colourFor(resolved as string);
         }),
       );
       expect(colours.size, polityId).toBe(1);

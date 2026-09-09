@@ -20,6 +20,7 @@ function version(id: string, fromYear: number, toYear: number): Version {
   return {
     id,
     polityId: `name:${id}`,
+    memberOf: null,
     fromYear,
     toYear,
     area: 1,

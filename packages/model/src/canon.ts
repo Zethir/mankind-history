@@ -1,6 +1,11 @@
 /** Every constant shared between the pipeline and the viewer. One place. */
 
-export const SCHEMA_VERSION = 1;
+/**
+ * 2: `Version` gained `memberOf`, the resolved id of the aggregate polity
+ * this version belonged to (decision 0017). 1 was the Phase 1/2 Milestone 1
+ * contract, with no membership field.
+ */
+export const SCHEMA_VERSION = 2;
 
 export const PROJECTION = "equal-earth" as const;
 

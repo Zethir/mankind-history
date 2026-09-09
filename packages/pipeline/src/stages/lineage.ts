@@ -29,6 +29,12 @@ export function deriveLineage(
   rowPolityIds: string[],
   whitelist: OverlapWhitelistEntry[],
   sourceVersion: string,
+  /**
+   * Positionally aligned with `rows`, from `resolveMembership` (decision
+   * 0017). Optional and defaulting to empty so every existing call site --
+   * none of which is about membership -- keeps working unchanged.
+   */
+  rowMemberOfIds: Array<string | null> = [],
 ): LineageResult {
   const groups = new Map<string, number[]>();
   for (let i = 0; i < rows.length; i++) {
@@ -63,6 +69,7 @@ export function deriveLineage(
       const version: Version = {
         id,
         polityId,
+        memberOf: rowMemberOfIds[index] ?? null,
         fromYear: source.fromYear,
         toYear: source.toYear,
         area: source.area,

@@ -16,6 +16,7 @@ describe("canonical types", () => {
     const version: Version = {
       id: "wd:Q1747689@-27",
       polityId: "wd:Q1747689",
+      memberOf: null,
       fromYear: -27,
       toYear: 180,
       area: 4200000,
@@ -42,7 +43,7 @@ describe("canonical types", () => {
   });
 
   it("pins the constants the artifact contract depends on", () => {
-    expect(SCHEMA_VERSION).toBe(1);
+    expect(SCHEMA_VERSION).toBe(2);
     expect(PROJECTION).toBe("equal-earth");
     expect(COORD_SCALE.full).toBe(1e9);
     expect(COORD_SCALE.mid).toBe(1e6);

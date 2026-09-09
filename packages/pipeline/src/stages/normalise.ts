@@ -8,6 +8,11 @@ export interface NormalisedRow {
   wikidata: string | null;
   wikipedia: string | null;
   seshat: string | null;
+  /**
+   * Raw upstream `MemberOf` name (not yet resolved to a polity id), or null.
+   * See `toMemberOf` and decision 0017.
+   */
+  memberOf: string | null;
   fromYear: number;
   toYear: number;
   area: number;
@@ -27,6 +32,8 @@ export interface NormaliseReport {
    */
   droppedParts: number;
   closedRings: number;
+  /** Kept rows whose (coerced) MemberOf field is non-null. See decision 0017. */
+  memberOf: number;
 }
 
 function emptyReport(): NormaliseReport {
@@ -37,6 +44,7 @@ function emptyReport(): NormaliseReport {
     droppedGeometry: 0,
     droppedParts: 0,
     closedRings: 0,
+    memberOf: 0,
   };
 }
 
@@ -58,6 +66,25 @@ export function toWikidata(value: unknown): string | null {
   if (s === null) return null;
   const match = /(Q\d+)\s*$/.exec(s);
   return match ? (match[1] as string) : null;
+}
+
+/**
+ * Cliopatria's `MemberOf` is almost always a single polity Name, but 86 rows
+ * in the pinned release (all early medieval succession chains -- Merovingian
+ * / Carolingian Franks, the Holy Roman Empire's Bohemia, Polish-Lithuania)
+ * carry a semicolon-separated pair instead, e.g.
+ * "(Merovingian Empire);(Kingdom of the Franks)". In every such case the
+ * first name is the aggregate that actually groups multiple sibling
+ * polities (what a colour grouping wants) and the second is a same-territory
+ * self-wrapper with no other member -- confirmed by checking each pair
+ * against the referenced polities' own Components. `Version.memberOf` is a
+ * single id (decision 0017), so only the first name is kept.
+ */
+export function toMemberOf(value: unknown): string | null {
+  const s = toText(value);
+  if (s === null) return null;
+  const first = (s.includes(";") ? (s.split(";")[0] as string) : s).trim();
+  return first === "" ? null : first;
 }
 
 /**
@@ -162,11 +189,15 @@ export function normaliseCliopatria(features: unknown[]): {
       continue;
     }
 
+    const memberOf = toMemberOf(props.MemberOf);
+    if (memberOf !== null) report.memberOf++;
+
     rows.push({
       name: toText(props.Name) ?? "unnamed",
       wikidata: toWikidata(props.Wikidata),
       wikipedia: toWikipedia(props.Wikipedia),
       seshat: toText(props.SeshatID),
+      memberOf,
       fromYear,
       toYear: toYearValue,
       area: Number.isFinite(Number(props.Area)) ? Number(props.Area) : 0,

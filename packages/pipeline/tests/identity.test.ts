@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { type AliasEntry, assignIdentity, resolvePolityId } from "../src/stages/identity";
+import {
+  type AliasEntry,
+  assignIdentity,
+  resolveMembership,
+  resolvePolityId,
+} from "../src/stages/identity";
 import type { NormalisedRow } from "../src/stages/normalise";
 
 function row(overrides: Partial<NormalisedRow> = {}): NormalisedRow {
@@ -8,6 +13,7 @@ function row(overrides: Partial<NormalisedRow> = {}): NormalisedRow {
     wikidata: null,
     wikipedia: null,
     seshat: null,
+    memberOf: null,
     fromYear: 0,
     toYear: 100,
     area: 1,
@@ -123,5 +129,69 @@ describe("assignIdentity", () => {
       "name:(Macedonian Empire)",
       "name:Macedonian Empire",
     ]);
+  });
+});
+
+describe("resolveMembership", () => {
+  it("resolves a MemberOf name to the same id polityIdFor would build for it", () => {
+    // Real values: French Africa is a member of (French Third Republic),
+    // which is itself a real polity in the same build.
+    const rows = [
+      row({ name: "French Africa", memberOf: "(French Third Republic)" }),
+      row({ name: "(French Third Republic)", memberOf: null }),
+    ];
+    const polityIds = new Set(["name:French Africa", "name:(French Third Republic)"]);
+    const { rowMemberOfIds, withMemberOf, distinctAggregates } = resolveMembership(
+      rows,
+      [],
+      polityIds,
+    );
+    expect(rowMemberOfIds).toEqual(["name:(French Third Republic)", null]);
+    expect(withMemberOf).toBe(1);
+    expect(distinctAggregates).toBe(1);
+  });
+
+  it("leaves a row with no MemberOf as null, uncounted", () => {
+    const rows = [row({ memberOf: null })];
+    const { rowMemberOfIds, withMemberOf } = resolveMembership(rows, [], new Set());
+    expect(rowMemberOfIds).toEqual([null]);
+    expect(withMemberOf).toBe(0);
+  });
+
+  it("applies aliases.json to a MemberOf name exactly as identity resolution applies it", () => {
+    // A hypothetical upstream rename of the aggregate: rows still say
+    // "Old Aggregate Name", but the alias sends its own polity id elsewhere.
+    const aliases: AliasEntry[] = [
+      { match: { name: "Old Aggregate Name" }, canonical: "name:New Aggregate Name", reason: "t" },
+    ];
+    const rows = [row({ name: "Child", memberOf: "Old Aggregate Name" })];
+    const polityIds = new Set(["name:Child", "name:New Aggregate Name"]);
+    const { rowMemberOfIds } = resolveMembership(rows, aliases, polityIds);
+    expect(rowMemberOfIds).toEqual(["name:New Aggregate Name"]);
+  });
+
+  it("fails the build on a MemberOf name that resolves to no polity in this build", () => {
+    const rows = [row({ name: "Child", memberOf: "Nonexistent Aggregate" })];
+    const polityIds = new Set(["name:Child"]);
+    expect(() => resolveMembership(rows, [], polityIds)).toThrow(/resolves to no polity/i);
+  });
+
+  it("counts every distinct dangling name once, and every affected row overall", () => {
+    const rows = [
+      row({ name: "A", memberOf: "Ghost" }),
+      row({ name: "B", memberOf: "Ghost" }),
+      row({ name: "C", memberOf: "Phantom" }),
+    ];
+    const polityIds = new Set(["name:A", "name:B", "name:C"]);
+    try {
+      resolveMembership(rows, [], polityIds);
+      throw new Error("expected resolveMembership to throw");
+    } catch (err) {
+      const message = (err as Error).message;
+      expect(message).toMatch(/^3 version\(s\)/);
+      expect(message).toMatch(/2 distinct/);
+      expect(message).toMatch(/Ghost/);
+      expect(message).toMatch(/Phantom/);
+    }
   });
 });

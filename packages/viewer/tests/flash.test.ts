@@ -9,6 +9,7 @@ function version(over: Partial<Version>): Version {
   return {
     id: "name:X@100",
     polityId: "name:X",
+    memberOf: null,
     fromYear: 100,
     toYear: 120,
     area: 150,

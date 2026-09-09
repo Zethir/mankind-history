@@ -8,6 +8,7 @@ function row(fromYear: number, toYear: number, area: number): NormalisedRow {
     wikidata: null,
     wikipedia: null,
     seshat: null,
+    memberOf: null,
     fromYear,
     toYear,
     area,
@@ -76,6 +77,18 @@ describe("deriveLineage", () => {
     const { versions, overlaps } = deriveLineage(rows, [P, P], whitelist, "1.0.0");
     expect(versions).toHaveLength(2);
     expect(overlaps).toEqual([{ earlier: "wd:Q1@0", later: "wd:Q1@50" }]);
+  });
+
+  it("sets memberOf from the positionally-aligned resolved id, defaulting to null", () => {
+    const rows = [row(0, 50, 10), row(80, 120, 25)];
+    const { versions } = deriveLineage(rows, [P, P], [], "1.0.0", ["name:Aggregate", null]);
+    expect(versions[0]?.memberOf).toBe("name:Aggregate");
+    expect(versions[1]?.memberOf).toBeNull();
+  });
+
+  it("defaults every version's memberOf to null when no rowMemberOfIds is given", () => {
+    const { versions } = deriveLineage([row(0, 50, 10)], [P], [], "1.0.0");
+    expect(versions[0]?.memberOf).toBeNull();
   });
 
   it("leaves confidence unpopulated (decision 0005)", () => {

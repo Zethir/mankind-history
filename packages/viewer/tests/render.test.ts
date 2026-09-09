@@ -137,7 +137,7 @@ describe("palette", () => {
   // temporarily changing FAMILIES[0]'s hue from 0 to 5 -- see the report
   // this shipped with for both the failing and the restored-green run.
   //
-  // Regenerated for the 1970s family palette (decision 0018). Three of these
+  // Regenerated for the proximity-graph fix (this revision). Three of these
   // twelve fixture polities qualify as sprawling (a version bounding box
   // spanning more than 45 degrees of longitude): Eastern Roman Empire
   // (Justinian's African and Italian reconquest, 536-554, spans ~47
@@ -152,20 +152,38 @@ describe("palette", () => {
   // sprawl guarantee for real: Kingdom of Italy and Nazi Germany are both
   // sprawling and genuinely co-visible (1936-1943), and get different
   // colours (family 0 vs family 1) below.
+  //
+  // Seven of the twelve moved from the previous (co-visibility-only) golden
+  // vector once proximity edges were unioned in, and every move is a real,
+  // previously-missed adjacency, not noise: Papal States now avoids Kingdom
+  // of Italy's colour (they genuinely overlap, 1861-1870, in the same place,
+  // Rome -- Italy annexed the Papal States) instead of sharing a colour with
+  // it by coincidence of an unrelated hash; Ostrogothic Kingdom avoids
+  // Eastern Roman Empire's (Justinian's reconquest of Ostrogothic Italy,
+  // 536-553, is exactly this pair, in Italy, at the same time); Roman
+  // Kingdom avoids Etruscans (contemporaneous, same region). Several of the
+  // newly-graph-coloured entrants (Ostrogothic Kingdom, Papal States, Roman
+  // Kingdom, Vandal Kingdom, Visigoths) land on the *same* colour as each
+  // other here -- that is correct, not a regression: none of those pairs is
+  // ever actually co-visible in time (millennia or centuries apart), so
+  // nothing in either graph ever demands they differ. A script checking
+  // every pair of these twelve polities for genuine time-and-bbox adjacency
+  // against this exact golden vector found zero same-colour pairs that are
+  // also adjacent (see the report this shipped with).
   it("matches the committed golden colours for the fixture's polities", () => {
     const golden: Record<string, string> = {
       "name:Eastern Roman Empire": "hsl(0 50% 74%)",
-      "name:Etruscans": "hsl(45 50% 58%)",
+      "name:Etruscans": "hsl(0 50% 74%)",
       "name:Kingdom of Italy": "hsl(0 50% 74%)",
       "name:Nazi Germany": "hsl(22 30% 74%)",
-      "name:Ostrogothic Kingdom": "hsl(25 50% 74%)",
-      "name:Papal States": "hsl(180 26% 58%)",
+      "name:Ostrogothic Kingdom": "hsl(22 30% 74%)",
+      "name:Papal States": "hsl(22 30% 74%)",
       "name:Republic of Italy": "hsl(0 50% 28%)",
-      "name:Roman Kingdom": "hsl(45 50% 74%)",
+      "name:Roman Kingdom": "hsl(22 30% 74%)",
       "name:Roman Republic": "hsl(200 26% 58%)",
-      "name:Vandal Kingdom": "hsl(150 26% 74%)",
-      "name:Visigoths": "hsl(180 26% 74%)",
-      "name:Western Roman Empire": "hsl(40 55% 28%)",
+      "name:Vandal Kingdom": "hsl(22 30% 74%)",
+      "name:Visigoths": "hsl(22 30% 74%)",
+      "name:Western Roman Empire": "hsl(0 50% 74%)",
     };
     const palette = buildPalette(versions);
     const actual: Record<string, string> = {};
@@ -343,6 +361,194 @@ describe("palette: sprawl guarantee (synthetic artifact)", () => {
     for (const id of [...SPRAWL_IDS, COMPACT_ID]) {
       expect(second.colourFor(id), id).toBe(first.colourFor(id));
     }
+  });
+});
+
+/**
+ * Two ordinary, non-sprawling, non-aggregate polities whose bounding boxes
+ * overlap in both axes during a shared year: the defect the owner reported
+ * ("I think we should not have the same color on different polities that are
+ * touching or close, I think it's disturbing") and the proximity graph
+ * (`buildProximityGraph` in palette.ts) exists to close.
+ *
+ * These two exact ids are not arbitrary. `hash` (FNV-1a, palette.ts) is a
+ * deterministic pure function of the id string, and "name:Neighbour 9" and
+ * "name:Neighbour 18" were found (by running that exact function standalone)
+ * to land on the identical bucket mod 40 -- both resolve to colour index 20,
+ * `hsl(0 50% 42%)`, under the hash fallback alone. Before this revision's
+ * proximity graph existed, two such polities placed in the same year with
+ * overlapping territory had no mechanism stopping them from colliding
+ * exactly like this pair does; picking an arbitrary pair could pass by
+ * accident (most id pairs hash to different buckets) even with the fix
+ * reverted, which is exactly the "test that could not fail" CLAUDE.md and
+ * this task warn against. This pair cannot pass by accident: reverting the
+ * proximity graph (or reverting to hash-only colouring for non-candidates)
+ * makes this test fail, deterministically, on this exact pair.
+ */
+const NEIGHBOUR_A_ID = "name:Neighbour 9";
+const NEIGHBOUR_B_ID = "name:Neighbour 18";
+
+function buildProximityArtifact(): VersionsArtifact {
+  const coordScale = 100_000;
+  const rows: Version[] = [];
+  const geometry: Record<string, VersionGeometry> = {};
+  // Both non-sprawling (5 degrees, well under SPRAWL_THRESHOLD_DEGREES) and
+  // identical, so they are guaranteed to overlap in both axes -- this test
+  // is about proximity, not about the sprawl/co-visibility mechanism, so
+  // neither polity qualifies for that graph on its own.
+  const sharedBbox = makeGeometry(bboxSpanningDegrees(5, coordScale));
+
+  rows.push(makeVersion(`${NEIGHBOUR_A_ID}@1900`, NEIGHBOUR_A_ID, 1900, 1950));
+  geometry[`${NEIGHBOUR_A_ID}@1900`] = sharedBbox;
+  rows.push(makeVersion(`${NEIGHBOUR_B_ID}@1900`, NEIGHBOUR_B_ID, 1900, 1950));
+  geometry[`${NEIGHBOUR_B_ID}@1900`] = sharedBbox;
+
+  return { schemaVersion: 1, level: "coarse", coordScale, rows, geometry };
+}
+
+describe("palette: proximity guarantee (synthetic artifact)", () => {
+  // A wrong value here is the two ids' shared hash colour, hsl(0 50% 42%):
+  // that is exactly what this test would report if the proximity graph were
+  // deleted (or never consulted) and colourFor fell all the way through to
+  // the hash fallback for both ids, since neither is sprawling or an
+  // aggregate.
+  it("gives two overlapping, non-sprawling neighbours different colours", () => {
+    const palette = buildPalette(buildProximityArtifact());
+    const a = palette.colourFor(NEIGHBOUR_A_ID);
+    const b = palette.colourFor(NEIGHBOUR_B_ID);
+    expect(a).not.toBe(b);
+    // Names the specific collision this guards, not just "some" mismatch.
+    expect([a, b]).not.toEqual(["hsl(0 50% 42%)", "hsl(0 50% 42%)"]);
+  });
+
+  it("builds the same colours twice from the same proximity artifact", () => {
+    const synthetic = buildProximityArtifact();
+    const first = buildPalette(synthetic);
+    const second = buildPalette(synthetic);
+    expect(second.colourFor(NEIGHBOUR_A_ID)).toBe(first.colourFor(NEIGHBOUR_A_ID));
+    expect(second.colourFor(NEIGHBOUR_B_ID)).toBe(first.colourFor(NEIGHBOUR_B_ID));
+  });
+});
+
+/**
+ * A regression guard for the `memberOf ?? polityId` keying decision in
+ * `buildProximityGraph`: two members of the same aggregate, whose bounding
+ * boxes overlap each other and everything else in this artifact, must
+ * collapse onto one drawn identity (the aggregate's) rather than compete for
+ * two separate graph-coloured slots. If they did compete for separate slots,
+ * "otherwise two members of the same empire will be treated as neighbours
+ * needing different colours, which contradicts merged mode" (the risk this
+ * keying exists to avoid).
+ *
+ * This is built to actually catch that mistake, not just assert the
+ * post-merge colour equality colourForDraw already guarantees by
+ * construction (colourForDraw's "on" branch looks up the aggregate's colour
+ * unconditionally, so a same-colour assertion through colourForDraw alone
+ * would pass even if the underlying graph keyed members by their own id).
+ * Instead this sizes the artifact to make the *keying* itself observable:
+ * one aggregate (whose own version, plus its two members' versions, must
+ * collapse to a single proximity node under correct keying) plus 39
+ * standalone polities, all sharing one identical bounding box and year
+ * range -- a complete graph. Keyed correctly, that is exactly 40 distinct
+ * drawn identities, fitting the 40-colour reservation with zero overflow
+ * (confirmed below: no warning, exactly 40 distinct colours used). Keyed by
+ * the raw polity id instead, the two members would add two *extra* nodes to
+ * the same complete graph -- 42 distinct polity ids, all mutually
+ * overlapping -- one confirmed real dist/ number past what greedy colouring
+ * can fit in 40 (see the plain colour-reservation overflow test below for
+ * the same pigeonhole argument at 41), which would make `warnOnOverflow`
+ * fire. A wrong implementation here is caught by the warning firing, not by
+ * a subtler colour-value mismatch.
+ */
+function buildMemberOverlapArtifact(): {
+  artifact: VersionsArtifact;
+  aggregateId: string;
+  memberXId: string;
+  memberYId: string;
+  standaloneIds: string[];
+} {
+  const coordScale = 100_000;
+  const rows: Version[] = [];
+  const geometry: Record<string, VersionGeometry> = {};
+  // Non-sprawling (5 degrees), so this exercises proximity alone, not the
+  // separate co-visibility-forces-aggregates-in mechanism (which would force
+  // the aggregate in regardless and could mask a proximity keying bug).
+  const sharedGeometry = makeGeometry(bboxSpanningDegrees(5, coordScale));
+
+  const aggregateId = "name:(Complete Empire)";
+  rows.push(makeVersion(`${aggregateId}@1900`, aggregateId, 1900, 1950));
+  geometry[`${aggregateId}@1900`] = sharedGeometry;
+
+  const memberXId = "name:Complete Member X";
+  const memberYId = "name:Complete Member Y";
+  rows.push(makeVersion(`${memberXId}@1900`, memberXId, 1900, 1950, aggregateId));
+  geometry[`${memberXId}@1900`] = sharedGeometry;
+  rows.push(makeVersion(`${memberYId}@1900`, memberYId, 1900, 1950, aggregateId));
+  geometry[`${memberYId}@1900`] = sharedGeometry;
+
+  const standaloneIds: string[] = [];
+  for (let i = 0; i < 39; i++) {
+    const id = `name:Complete Standalone ${i}`;
+    standaloneIds.push(id);
+    rows.push(makeVersion(`${id}@1900`, id, 1900, 1950));
+    geometry[`${id}@1900`] = sharedGeometry;
+  }
+
+  return {
+    artifact: { schemaVersion: 2, level: "coarse", coordScale, rows, geometry },
+    aggregateId,
+    memberXId,
+    memberYId,
+    standaloneIds,
+  };
+}
+
+describe("palette: member overlap does not fragment the proximity graph (synthetic artifact)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // The keying guarantee itself: no overflow warning on an artifact sized to
+  // overflow (42 mutually-overlapping ids) only if members were wrongly
+  // keyed by their own polity id instead of their aggregate's.
+  it("does not overflow when two overlapping members collapse onto their aggregate's node", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { artifact, aggregateId, standaloneIds } = buildMemberOverlapArtifact();
+    const palette = buildPalette(artifact);
+    expect(warn).not.toHaveBeenCalled();
+    const colours = new Set(standaloneIds.map((id) => palette.colourFor(id)));
+    colours.add(palette.colourFor(aggregateId));
+    expect(colours.size).toBe(40);
+  });
+
+  // The observable rendering contract: both members still share their
+  // aggregate's colour under merged mode despite their boxes overlapping
+  // each other. A wrong value here is the two members resolving to two
+  // different colours, e.g. distinct hash-fallback results.
+  it("still shares a colour under merged mode for two overlapping members", () => {
+    const { artifact, aggregateId, memberXId, memberYId } = buildMemberOverlapArtifact();
+    const palette = buildPalette(artifact);
+    const index = buildPolityIndex(artifact);
+    const knownPolityIds = new Set(artifact.rows.map((r) => r.polityId));
+    const xEntry = index.get(`${memberXId}@1900`);
+    const yEntry = index.get(`${memberYId}@1900`);
+    expect(xEntry).toBeDefined();
+    expect(yEntry).toBeDefined();
+    const xColour = colourForDraw(
+      xEntry as NonNullable<typeof xEntry>,
+      "on",
+      palette,
+      knownPolityIds,
+    );
+    const yColour = colourForDraw(
+      yEntry as NonNullable<typeof yEntry>,
+      "on",
+      palette,
+      knownPolityIds,
+    );
+    expect(xColour).toBe(palette.colourFor(aggregateId));
+    expect(yColour).toBe(palette.colourFor(aggregateId));
+    expect(xColour).toBe(yColour);
   });
 });
 

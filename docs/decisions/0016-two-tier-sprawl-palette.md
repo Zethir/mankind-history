@@ -3,7 +3,9 @@
 **Status:** superseded by decision 0018 (this record was originally written
 for a geographic-hue design that was rejected before shipping; that history
 is summarised below, not kept in full -- see git history for the original
-text if needed)
+text if needed); the graph-colouring mechanism this record established is
+further extended, not superseded, by the "Addendum" at the bottom of this
+file (spatial proximity unioned into the same graph, this revision)
 
 **Superseded, not discarded:** decision 0018 (the 1970s family palette)
 keeps this record's central guarantee -- no two sprawling empires ever on
@@ -254,3 +256,124 @@ both depend on every polity's versions in the artifact.
   former was watched and reported broken; the latter was rejected by
   measurement before anyone watched it run), so this is the second
   candidate to reach that judgement, not the first.
+
+## Addendum: spatial proximity unioned into the graph (this revision)
+
+This record's central guarantee -- graph-colour the polities whose repeated
+colour would mislead, so none of them share a colour with a co-visible peer
+-- survived decisions 0018 and 0019 unchanged in mechanism, restricted to
+"sprawling polities and aggregates," on the theory that scattered colonial
+empires were the only repeated colours that actually misled a viewer. The
+owner's verdict on the shipped 1970s palette, after watching it run, proved
+that theory incomplete. Verbatim: *"I think we should not have the same
+color on different polities that are touching or close, I think it's
+disturbing."* An ordinary pair of adjacent, compact polities sharing a
+colour by hash coincidence is exactly as misleading on screen as two
+colonial empires sharing one -- it reads as one having annexed the other, or
+as a border that does not exist -- and the co-visibility graph never had any
+notion of "touching" to catch it, because it only ever knew about time.
+
+**Measured, motivating the fix:** sampling 120 years across the real dist/'s
+full range and treating bounding-box overlap in both axes as "neighbouring":
+6,648 unique neighbouring polity pairs, of which 155 (2.33%) shared a drawn
+colour. Greedy-colouring the same graph with a second kind of edge unioned
+in -- two *drawn identities* (`memberOf ?? polityId`, so a member takes its
+aggregate's slot and never competes separately; decision 0019's merged fill
+would otherwise be contradicted by forcing a member and its own empire
+apart) adjacent whenever their version bounding boxes overlap in both axes
+during a year they are both live -- brings that to 0 (0.00%), using the
+*same* 40 colours, with zero polities forced to collide.
+
+**Verified against the real dist/ with the shipped implementation**, which
+does not sample: `buildProximityGraph` (palette.ts) sweeps every year the
+live version set can actually change (not a 120-year sample), so it cannot
+miss a transient overlap the sampled measurement above might have. That
+exhaustive sweep finds more neighbouring pairs than the sample did --
+10,840, not 6,648, because it catches brief overlaps a 120-year sample skips
+-- and still **0 conflicts**. The combined co-visibility/proximity graph has
+1,348 nodes (154 co-visibility candidates, 1,314 proximity nodes, overlapping
+at the aggregates present in both) and needs 35 of the 40 reserved colours
+-- fewer than decision 0018's 36-for-co-visibility-alone, not a
+contradiction: proximity mostly adds small, low-degree nodes that were
+previously unconstrained (hash-assigned) and easy for greedy colouring to
+slot into an existing gap, while the union only ever adds constraints, never
+removes the sprawling-empire ones this record and decision 0018 measured.
+
+**Both guarantees verified simultaneously, neither traded for the other.**
+This record's original sprawling-empire co-visibility guarantee is unchanged
+in mechanism (same `CO_VISIBILITY_MARGIN_YEARS`, same candidate selection)
+and re-verified after the union: 2,911 sprawling co-visible pairs, **0**
+conflicts. The new neighbouring guarantee: 10,840 neighbouring pairs, **0**
+conflicts. `warnOnOverflow` (unchanged in mechanism, now checking the union)
+fired zero times against the real dist/; if unioning proximity in ever
+pushes the real graph's requirement past 40, that is the mechanism this
+record already built for making that loud rather than silent -- see
+"Overflow is observable, not silent" above.
+
+**Expanding the palette was measured and rejected, not overlooked.** This
+record's own "What the data says the actual problem is" section already
+established that colour count does not fix a density problem: 40 colours
+give a minimum cross-family CIE76 deltaE of 11.9; pushing to 72 collapses
+that to 6.0 with 22 confusable pairs, because past roughly 40 colours people
+stop being able to tell colours apart regardless of how they are assigned.
+That finding holds exactly as much for "touching neighbours" as it did for
+the original sprawling-empire failure mode. A future reader tempted to fix a
+neighbouring-colour complaint by growing `FAMILIES` should re-read this
+paragraph first: the fix is spending the *existing* 40 colours against a
+graph that knows about space, not manufacturing more colours nobody could
+tell apart anyway. (Also stated as a code comment on `FAMILIES` in
+palette.ts, specifically to head this off.)
+
+**Performance.** A naive sweep testing every pair of live versions in every
+one of the dataset's 5,424 years would be far too slow to run at page load.
+`buildProximityGraph` instead sweeps only the "breakpoints" where the live
+version set can change (every version's `fromYear` and `toYear + 1`,
+deduplicated -- 509 against the real dist/'s 13,380 versions, not thousands),
+and within each breakpoint segment sorts the live set by `minX` and prunes
+with an eviction sweep before ever testing a pair's y-overlap. Measured
+against the real dist/: `buildProximityGraph` itself runs in about 30ms, and
+the full `buildPalette` call (including the unchanged co-visibility
+construction and greedy-colouring the ~1,350-node union) in roughly 40-90ms
+depending on JIT warmth across repeated measurements -- comfortably under
+the rough 150ms budget this was measured against. No sampling was needed in
+the shipped implementation, only in the motivating measurement above: an
+exact sweep turned out to be fast enough that there was no need to trade
+completeness for speed.
+
+**Bounding-box overlap is a loose, deliberately conservative proxy for true
+adjacency.** It reports two territories as neighbours whenever their
+*rectangles* touch, even where the actual coastlines or borders inside those
+rectangles do not (a near-miss on the diagonal, two coastlines facing each
+other across open water) -- which only ever adds a colour-distinctness
+constraint that was not strictly necessary, never removes one that was. A
+conflict-free colouring built against it is therefore conservative, not
+optimistic. Do not replace it with a tighter or "smarter" test (bbox
+centres, a distance threshold, true polygon adjacency) on the theory that it
+would be more accurate: a looser test could let a real touching pair through
+uncaught, which is the exact defect this mechanism exists to close, while
+the current test's only failure mode is a wasted colour-distinctness
+constraint on a pair that never really touches.
+
+**Consequences, in addition to the ones already recorded above:**
+
+- The proximity graph considers *every* polity in the artifact, not just the
+  ~150 sprawling/aggregate candidates -- most on-screen neighbouring
+  collisions are between two perfectly ordinary, compact, adjacent polities,
+  not empires, so restricting the new graph to the old candidate population
+  would have missed the complaint entirely.
+- The golden colour vector in `render.test.ts` moved again: several of the
+  fixture's ancient-Mediterranean polities (Etruscans, Ostrogothic Kingdom,
+  Papal States, Roman Kingdom, Vandal Kingdom, Visigoths, Western Roman
+  Empire) now enter the graph-coloured population because each has a real
+  proximity edge to something (Papal States to Kingdom of Italy -- they
+  genuinely overlap, 1861-1870, in Rome; Ostrogothic Kingdom to Eastern Roman
+  Empire -- Justinian's reconquest of Ostrogothic Italy is exactly this
+  pair). A script checking every pair of the fixture's twelve polities for
+  genuine time-and-bbox adjacency against the new golden vector found zero
+  same-colour pairs that are also adjacent.
+- This still has not been judged by a human watching the map with real
+  neighbouring polities telling apart or not -- the 2.33%-to-0% figure is a
+  measurement of colour assignment, not of what the map looks like once
+  rendered at typical zoom, where a shared outline seam (drawn regardless of
+  fill colour) already does some of the "these are different polities" work
+  the fill colour is not solely responsible for.

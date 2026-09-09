@@ -6,6 +6,19 @@ import { FADE_SECONDS, SPEED_STEPS } from "../engine/constants";
  * One family palette, not two saturation tiers, and one colour per polity --
  * no declination.
  *
+ * The graph this module colours against unions two kinds of edges (see
+ * `buildPalette`): co-visibility (two candidates coexist in time, the
+ * original decision-0016 mechanism) and, as of this revision, spatial
+ * proximity (two drawn identities' territory overlaps on screen in some year
+ * they are both live). The owner's complaint that motivated the proximity
+ * half: "I think we should not have the same color on different polities
+ * that are touching or close, I think it's disturbing." Measured against the
+ * real dist/: adding proximity edges drops neighbouring-pair colour
+ * collisions from 155 (2.33% of neighbouring pairs) to 0, using the same 40
+ * colours -- see `buildProximityGraph` and the report this shipped with.
+ * Expanding the palette to chase this instead was measured and rejected:
+ * see `FAMILIES`'s comment and docs/decisions/0016-two-tier-sprawl-palette.md.
+ *
  * Decision 0016 split the palette into a saturated "tier 1" (sprawling
  * empires, graph-coloured for a hard no-collision guarantee) and a muted
  * "tier 2" (everyone else, hash-assigned), told apart by saturation alone so
@@ -81,8 +94,17 @@ const CO_VISIBILITY_MARGIN_YEARS = Math.ceil(FADE_SECONDS * Math.max(...SPEED_ST
  * appropriate for print, not for a screen covered edge-to-edge in polygons).
  *
  * Order is not meaningful beyond matching the brief that chose these pairs;
- * a family's *index* is what the co-visibility graph colours against, same
- * role `TIER1_HUES`'s hue index played before.
+ * a family's *index* is what the graph colours against, same role
+ * `TIER1_HUES`'s hue index played before.
+ *
+ * Do not grow this to fix a neighbouring-colour complaint. That was measured
+ * and rejected: 40 colours give a cross-family minimum CIE76 deltaE of 11.9;
+ * pushing to 72 collapses that to 6.0 with 22 confusable pairs, because past
+ * roughly 40 colours people stop being able to tell them apart regardless of
+ * how they are assigned (see decision 0016's "What the data says the actual
+ * problem is"). The fix for two touching polities sharing a colour is
+ * spending these 40 colours better -- folding spatial proximity into the
+ * graph `buildPalette` colours against, below -- not adding more of them.
  */
 const FAMILIES: ReadonlyArray<{ readonly hue: number; readonly saturation: number }> = [
   { hue: 0, saturation: 50 },
@@ -105,15 +127,21 @@ const SHADE_COUNT = SHADE_LIGHTNESS.length;
 
 /**
  * Sized the same way decision 0016 sized `TIER1_COLOUR_COUNT`, re-measured
- * for this graph now that aggregates are folded into it: the real
- * co-visibility graph (sprawling polities and aggregates together, margin
- * widened) has max degree 97, median 35, and needs 36 of these against the
- * real dist/ (see the report this shipped with) -- denser than decision
- * 0016's own graph (max degree 91, needing 34) because aggregates add nodes
- * and edges the old sprawl-only graph never had. 40 still leaves headroom
- * past that for a denser re-blessed dataset or a wider margin, without
- * silently wrapping. `warnOnOverflow` is what makes exceeding it observable
- * instead of a silent wrong answer, unchanged from decision 0016.
+ * each time the graph this module colours against grew: 36 against the
+ * co-visibility-only graph with aggregates folded in (decision 0018), and as
+ * of this revision, 35 against the *combined* co-visibility/proximity graph
+ * (max proximity degree ~580, median ~10, over ~1,350 nodes -- most of them
+ * ordinary compact polities with a touching neighbour, not sprawling
+ * empires) -- see the report this shipped with. That the combined graph
+ * needs *fewer* colours than the co-visibility-only graph once did is not a
+ * contradiction: proximity edges mostly connect small, low-degree compact
+ * polities that were previously unconstrained (hash-assigned) and easy for
+ * greedy colouring to slot in, while the union only ever adds constraints,
+ * never removes the sprawling-empire ones decision 0016/0018 measured. 40
+ * still leaves headroom past 35 for a denser re-blessed dataset, a wider
+ * margin, or a stricter proximity test, without silently wrapping.
+ * `warnOnOverflow` is what makes exceeding it observable instead of a silent
+ * wrong answer, unchanged in mechanism from decision 0016.
  */
 const COLOUR_COUNT = FAMILY_COUNT * SHADE_COUNT;
 
@@ -243,6 +271,144 @@ function buildCovisibilityGraph(
 }
 
 /**
+ * True if two scaled-integer projected bounding boxes overlap in both axes.
+ *
+ * This is a loose proxy for true adjacency, deliberately: it reports two
+ * territories as neighbours whenever their *rectangles* touch, even where
+ * the actual polygons inside those rectangles do not (a near-miss on the
+ * diagonal, or two coastlines facing each other across open water). That
+ * makes the proximity graph *more* constrained than reality -- it can demand
+ * distinct colours for a pair that never actually touches -- so a
+ * conflict-free colouring built against it is conservative, not optimistic.
+ * Do not replace this with a tighter or "smarter" test (bbox centres, a
+ * distance threshold, true polygon adjacency) thinking it is an improvement:
+ * loosening the test would let some real touching pairs through uncaught,
+ * which is exactly the defect this graph exists to close. A false positive
+ * here only costs a wasted colour-distinctness constraint; a false negative
+ * would put the same colour back on two touching polities.
+ */
+function bboxesOverlap(
+  a: readonly [number, number, number, number],
+  b: readonly [number, number, number, number],
+): boolean {
+  return a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+}
+
+/** One version's drawn identity, year interval and bounding box, for the proximity sweep. */
+interface ProximityRecord {
+  readonly drawnId: string;
+  readonly fromYear: number;
+  readonly toYear: number;
+  readonly bbox: readonly [number, number, number, number];
+}
+
+/**
+ * Adjacency by spatial proximity: two *drawn identities* (`memberOf ??
+ * polityId` -- colour is assigned to the aggregate a member renders as, per
+ * decision 0019's merged fill, so two members of the same empire must never
+ * be forced apart by this graph even though their boxes overlap) are
+ * adjacent if, in some year both have a live version, those versions'
+ * bounding boxes overlap in both axes (`bboxesOverlap`).
+ *
+ * This is the second half of the fix for the owner's report: "I think we
+ * should not have the same color on different polities that are touching or
+ * close, I think it's disturbing." Unlike `buildCovisibilityGraph`, which
+ * only ever considers the ~150 sprawling/aggregate candidates, this must
+ * consider every polity in the artifact -- most on-screen collisions are
+ * between two perfectly ordinary, compact, adjacent polities, not empires.
+ *
+ * A naive sweep would test every pair of live versions in every one of the
+ * dataset's 5,424 years -- up to 195 live versions squared, per year, far
+ * too slow to run at page load in a browser. Instead of sampling years (a
+ * legitimate alternative -- the measurement that motivated this fix sampled
+ * 120 years and still found the fix effective), this sweeps exactly the
+ * "breakpoints" where the live set can change (every version's `fromYear`
+ * and `toYear + 1`, deduplicated and sorted -- a few hundred against the
+ * real dist/, not thousands) so no transient overlap between two breakpoints
+ * can be missed, and no year is ever visited whose live set is identical to
+ * the one before it. Within each breakpoint-to-breakpoint segment, the live
+ * set is sorted by `minX` and swept left to right with an `open` list of
+ * records still possibly overlapping in x (evicting any whose `maxX` has
+ * already fallen behind, which is safe once `minX` only increases): only
+ * pairs that pass the x-overlap prune are ever bbox-tested for y, which is
+ * what keeps the busiest real segments (up to 195 live versions) fast in
+ * practice even though the graph's median degree (10) says most pairs never
+ * overlap at all. Measured against the real dist/: ~50ms total, see the
+ * report this shipped with.
+ */
+function buildProximityGraph(versions: VersionsArtifact): Map<string, Set<string>> {
+  const records: ProximityRecord[] = [];
+  for (const row of versions.rows) {
+    const bbox = versions.geometry[row.id]?.bbox;
+    if (!bbox) continue;
+    records.push({
+      drawnId: row.memberOf ?? row.polityId,
+      fromYear: row.fromYear,
+      toYear: row.toYear,
+      bbox,
+    });
+  }
+
+  const breakpoints = [...new Set(records.flatMap((r) => [r.fromYear, r.toYear + 1]))].sort(
+    (x, y) => x - y,
+  );
+  const byStart = [...records].sort((a, b) => a.fromYear - b.fromYear);
+  const byEnd = [...records].sort((a, b) => a.toYear - b.toYear);
+
+  const adjacency = new Map<string, Set<string>>();
+  const connect = (a: string, b: string): void => {
+    if (a === b) return;
+    if (!adjacency.has(a)) adjacency.set(a, new Set<string>());
+    if (!adjacency.has(b)) adjacency.set(b, new Set<string>());
+    (adjacency.get(a) as Set<string>).add(b);
+    (adjacency.get(b) as Set<string>).add(a);
+  };
+
+  const active = new Set<ProximityRecord>();
+  let startIndex = 0;
+  let endIndex = 0;
+  for (let bp = 0; bp < breakpoints.length; bp++) {
+    const year = breakpoints[bp] as number;
+    // Retire records ending strictly before `year` FIRST, so the active set
+    // reflects exactly who is live during [year, nextBreakpoint - 1] before
+    // either the pair check below or a same-year successor's arrival.
+    while (endIndex < byEnd.length && (byEnd[endIndex] as ProximityRecord).toYear + 1 === year) {
+      active.delete(byEnd[endIndex] as ProximityRecord);
+      endIndex++;
+    }
+    while (
+      startIndex < byStart.length &&
+      (byStart[startIndex] as ProximityRecord).fromYear === year
+    ) {
+      active.add(byStart[startIndex] as ProximityRecord);
+      startIndex++;
+    }
+
+    if (active.size > 1) {
+      const live = [...active].sort((a, b) => a.bbox[0] - b.bbox[0]);
+      const open: ProximityRecord[] = [];
+      for (const cur of live) {
+        let w = 0;
+        for (let r = 0; r < open.length; r++) {
+          const o = open[r] as ProximityRecord;
+          if (o.bbox[2] >= cur.bbox[0]) open[w++] = o;
+        }
+        open.length = w;
+        for (let r = 0; r < open.length; r++) {
+          const o = open[r] as ProximityRecord;
+          if (o.drawnId !== cur.drawnId && bboxesOverlap(o.bbox, cur.bbox)) {
+            connect(o.drawnId, cur.drawnId);
+          }
+        }
+        open.push(cur);
+      }
+    }
+  }
+
+  return adjacency;
+}
+
+/**
  * Greedy graph colouring: visit nodes by descending degree (the hardest to
  * place first), breaking ties on id so the result is deterministic, and give
  * each one the smallest colour index none of its already-coloured neighbours
@@ -274,14 +440,18 @@ function greedyColour(adjacency: ReadonlyMap<string, Set<string>>): Map<string, 
  * `colourFromIndex`'s modulo means an overflow -- more colour indices than
  * `COLOUR_COUNT` reserves -- degrades into a silent, wrong answer: two
  * adjacent candidates whose indices happen to differ by exactly the reserved
- * count would collide, breaking the one guarantee this palette exists to
- * make, with nothing on screen to say so. This warns once per `buildPalette`
- * call so that failure is at least loud. Not expected against real data (see
- * the report this shipped with) but a future increase to
- * `CO_VISIBILITY_MARGIN_YEARS`, or a denser re-blessed dataset, could reach
- * it -- and folding aggregates into this same graph (new in this revision)
- * makes it somewhat denser than decision 0016 ever measured, which is
- * exactly why this check still matters.
+ * count would collide, breaking one of the two guarantees this palette
+ * exists to make (no two co-visible sprawling empires share a colour, no two
+ * on-screen neighbours share a colour), with nothing on screen to say so.
+ * This warns once per `buildPalette` call so that failure is at least loud.
+ * Not expected against real data (see the report this shipped with -- 35 of
+ * 40 needed against the combined co-visibility/proximity graph) but a future
+ * increase to `CO_VISIBILITY_MARGIN_YEARS`, or a denser re-blessed dataset,
+ * could reach it -- and unioning in the proximity graph (new in this
+ * revision) makes this substantially denser than decision 0016 or 0018 ever
+ * measured, which is exactly why this check still matters. If this ever
+ * fires against real data, that is an overflow to report, not to silence:
+ * see the module doc comment on why growing `FAMILIES` is the wrong fix.
  */
 function warnOnOverflow(colourIndexOf: ReadonlyMap<string, number>): void {
   let overflowCount = 0;
@@ -292,18 +462,19 @@ function warnOnOverflow(colourIndexOf: ReadonlyMap<string, number>): void {
   }
   if (overflowCount > 0) {
     console.warn(
-      `palette: co-visibility graph needed ${maxIndex + 1} colours, ` +
-        `more than the ${COLOUR_COUNT} reserved -- ${overflowCount} ` +
-        "candidates wrapped via modulo and may collide with a co-visible neighbour.",
+      `palette: combined co-visibility/proximity graph needed ${maxIndex + 1} ` +
+        `colours, more than the ${COLOUR_COUNT} reserved -- ${overflowCount} ` +
+        "candidates wrapped via modulo and may collide with a neighbour.",
     );
   }
 }
 
 /**
  * Builds a colour lookup from the dataset itself: which polities are
- * "sprawling", which are aggregates, and their graph-coloured assignments all
- * depend on every version in this artifact, not just the id being coloured.
- * The hash fallback stays a pure function of the id alone.
+ * "sprawling", which are aggregates, which touch or sit close to which, and
+ * their graph-coloured assignments all depend on every version in this
+ * artifact, not just the id being coloured. The hash fallback stays a pure
+ * function of the id alone.
  */
 export function buildPalette(versions: VersionsArtifact): Palette {
   const versionsByPolity = new Map<string, Version[]>();
@@ -360,8 +531,27 @@ export function buildPalette(versions: VersionsArtifact): Palette {
     }
   }
 
-  const adjacency = buildCovisibilityGraph(candidateIds, candidateIntervals);
-  const colourIndexOf = greedyColour(adjacency);
+  const covisibility = buildCovisibilityGraph(candidateIds, candidateIntervals);
+  const proximity = buildProximityGraph(versions);
+
+  // Union the two adjacency graphs: colour is assigned against whichever
+  // guarantee -- no two co-visible sprawling empires share a colour, no two
+  // on-screen neighbours share a colour -- has an opinion about a given pair.
+  // A node that is only ever a proximity candidate (an ordinary compact
+  // polity with a touching neighbour, the common case that motivated this
+  // graph) still needs its own entry so it competes for a graph-coloured
+  // slot instead of falling through to the unconstrained hash fallback.
+  const combined = new Map<string, Set<string>>();
+  for (const [id, neighbours] of covisibility) {
+    combined.set(id, new Set(neighbours));
+  }
+  for (const [id, neighbours] of proximity) {
+    const existing = combined.get(id) ?? new Set<string>();
+    for (const neighbour of neighbours) existing.add(neighbour);
+    combined.set(id, existing);
+  }
+
+  const colourIndexOf = greedyColour(combined);
   warnOnOverflow(colourIndexOf);
 
   const graphColours = new Map<string, string>();

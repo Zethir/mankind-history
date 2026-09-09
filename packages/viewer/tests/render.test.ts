@@ -3,6 +3,8 @@ import { COORD_SCALE, equalEarth, WORLD_HALF_HEIGHT, WORLD_HALF_WIDTH } from "@h
 import { readArtifact } from "@history/model/artifact";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildPalette } from "../src/render/palette";
+import { buildPolityIndex } from "../src/render/polity-index";
+import { colourForDraw } from "../src/render/render-mode";
 import { fitWorld, fromScreen, toScreen } from "../src/render/transform";
 
 describe("transform", () => {
@@ -145,8 +147,8 @@ describe("palette", () => {
   // deep in the occupied USSR, 45.42 degrees at its widest version -- only
   // 0.42 above the threshold, computed and confirmed, not eyeballed). None
   // of the fixture's polities carry a non-null memberOf (measured against
-  // fixtures/dist), so declination never fires here -- see the synthetic
-  // declination tests below for that. This fixture still exercises the
+  // fixtures/dist), so no merging is exercised here -- see the synthetic
+  // merged-mode tests below for that. This fixture still exercises the
   // sprawl guarantee for real: Kingdom of Italy and Nazi Germany are both
   // sprawling and genuinely co-visible (1936-1943), and get different
   // colours (family 0 vs family 1) below.
@@ -250,7 +252,7 @@ function makeVersion(
     toYear,
     area: 1000,
     // Schema 2 added membership (decision 0017). Defaults to null -- most of
-    // this file's synthetic polities stand alone -- but the declination
+    // this file's synthetic polities stand alone -- but the merged-mode
     // tests below pass an aggregate id explicitly.
     memberOf,
     prevId: null,
@@ -345,18 +347,21 @@ describe("palette: sprawl guarantee (synthetic artifact)", () => {
 });
 
 /**
- * Declination (decision 0018): a version whose `memberOf` names an aggregate
- * takes a shade of that aggregate's family instead of an independent colour.
- * `fixtures/dist` has zero rows with a non-null `memberOf` (measured), so
- * none of the tests above exercise this at all -- a test suite that never
- * built an artifact with real membership could pass vacuously forever. This
- * synthetic artifact is the only place declination is actually checked.
+ * Merged rendering (decision 0019): a version whose `memberOf` names an
+ * aggregate renders with that aggregate's `colourFor` result, not an
+ * independent colour of its own. `fixtures/dist` has zero rows with a
+ * non-null `memberOf` (measured), so none of the tests above exercise this
+ * at all -- a test suite that never built an artifact with real membership
+ * could pass vacuously forever. This synthetic artifact, run through the
+ * real `buildPalette` and the real `colourForDraw` together, is the only
+ * place the merged path is checked end to end.
  */
-function buildDeclinationArtifact(memberCount: number): {
+function buildMergeArtifact(): {
   artifact: VersionsArtifact;
   aggregateId: string;
-  memberIds: string[];
+  memberId: string;
   soloId: string;
+  danglingId: string;
 } {
   const coordScale = 100_000;
   const rows: Version[] = [];
@@ -367,12 +372,9 @@ function buildDeclinationArtifact(memberCount: number): {
   rows.push(makeVersion(`${aggregateId}@1900`, aggregateId, 1900, 1950));
   geometry[`${aggregateId}@1900`] = smallBbox;
 
-  const memberIds = Array.from({ length: memberCount }, (_, i) => `name:Member ${i}`);
-  for (const memberId of memberIds) {
-    const versionId = `${memberId}@1900`;
-    rows.push(makeVersion(versionId, memberId, 1900, 1950, aggregateId));
-    geometry[versionId] = smallBbox;
-  }
+  const memberId = "name:Member Colony";
+  rows.push(makeVersion(`${memberId}@1900`, memberId, 1900, 1950, aggregateId));
+  geometry[`${memberId}@1900`] = smallBbox;
 
   // A wholly unrelated, unaffiliated polity, present in the same artifact so
   // a test can check the aggregate group's presence does not leak into it.
@@ -380,84 +382,76 @@ function buildDeclinationArtifact(memberCount: number): {
   rows.push(makeVersion(`${soloId}@1900`, soloId, 1900, 1950));
   geometry[`${soloId}@1900`] = smallBbox;
 
+  // A member whose memberOf names a polity that is not itself a row in this
+  // artifact -- the dangling-reference case decision 0017 measures at zero
+  // against real data but colourForDraw must not assume stays true forever.
+  const danglingId = "name:Dangling Colony";
+  rows.push(makeVersion(`${danglingId}@1900`, danglingId, 1900, 1950, "name:(Ghost Empire)"));
+  geometry[`${danglingId}@1900`] = smallBbox;
+
   return {
     artifact: { schemaVersion: 2, level: "coarse", coordScale, rows, geometry },
     aggregateId,
-    memberIds,
+    memberId,
     soloId,
+    danglingId,
   };
 }
 
-describe("palette: declination (synthetic artifact)", () => {
-  // A member resolves to a shade of its aggregate's family, not an
-  // independent colour. The aggregate's own colourFor is itself
-  // family-consistent (see palette.ts's module doc comment), so this checks
-  // the member's colourForMember result shares the exact same hue/saturation
-  // prefix as the aggregate's colourFor result. A wrong value here -- for
-  // example the member falling through to its own hash colour instead of
-  // declining -- would produce an unrelated hue such as "hsl(90 34% ...)"
-  // instead of one starting with the aggregate's "hsl(0 50% ...)".
-  it("resolves a member to a shade of its aggregate's family", () => {
-    const { artifact, aggregateId, memberIds } = buildDeclinationArtifact(1);
+describe("colourForDraw: merged mode (synthetic artifact, real palette)", () => {
+  // The one behaviour "on" mode exists for, exercised end to end through the
+  // real graph/hash palette rather than a fake one. A wrong value here --
+  // the member falling through to its own colourFor result instead of the
+  // aggregate's -- would return the member's own (different, since they are
+  // different ids hashed independently) colour instead.
+  it("resolves a member to its aggregate's real palette colour", () => {
+    const { artifact, aggregateId, memberId } = buildMergeArtifact();
     const palette = buildPalette(artifact);
-    const aggregateColour = palette.colourFor(aggregateId);
-    const familyPrefix = /^hsl\(\d+ \d+%/.exec(aggregateColour)?.[0];
-    const memberColour = palette.colourForMember(aggregateId, memberIds[0] as string);
-    expect(memberColour.startsWith(familyPrefix as string), memberColour).toBe(true);
+    const index = buildPolityIndex(artifact);
+    const knownPolityIds = new Set(artifact.rows.map((r) => r.polityId));
+    const entry = index.get(`${memberId}@1900`);
+    expect(entry).toBeDefined();
+    const colour = colourForDraw(entry as NonNullable<typeof entry>, "on", palette, knownPolityIds);
+    expect(colour).toBe(palette.colourFor(aggregateId));
   });
 
-  // Two members of one aggregate (3 members here, comfortably <=4) share the
-  // family's hue/saturation but differ in shade, so the pair reads as one
-  // empire made of distinguishable pieces rather than one flat colour. A
-  // wrong value here would be two members returning the byte-identical
-  // colour (declination not cycling shades at all) or two different hues
-  // (declination not sharing the family at all).
-  it("gives two members of a small aggregate the same hue but different shades", () => {
-    const { artifact, aggregateId, memberIds } = buildDeclinationArtifact(3);
-    const palette = buildPalette(artifact);
-    const colours = memberIds.map((id) => palette.colourForMember(aggregateId, id));
-    const huesAndSats = colours.map((c) => /^hsl\((\d+) (\d+)%/.exec(c)?.slice(1, 3).join("/"));
-    expect(new Set(huesAndSats).size, "all members must share one hue/saturation").toBe(1);
-    expect(new Set(colours).size, "all members must differ").toBe(memberIds.length);
-  });
-
-  // A non-member is unaffected by declination or by the presence of an
-  // aggregate group in the same artifact: built alongside three members of
-  // "Test Empire", "Solo Colony" gets exactly the colour it would get built
-  // completely alone. A wrong value here would mean the aggregate/member
-  // bookkeeping is leaking into ordinary hash-fallback colouring -- for
-  // example if the candidate set were built incorrectly and pulled Solo
-  // Colony into it.
+  // A non-member is unaffected by the presence of an aggregate group in the
+  // same artifact: built alongside "Test Empire" and its one member, "Solo
+  // Colony" still resolves to exactly its own colourFor result. A wrong
+  // value here would mean the aggregate/member bookkeeping is leaking into
+  // an unaffiliated polity's draw colour.
   it("leaves a non-member's colour unaffected by an aggregate group in the same artifact", () => {
-    const { artifact, soloId } = buildDeclinationArtifact(3);
-    const withGroup = buildPalette(artifact).colourFor(soloId);
-
-    const soloOnly: VersionsArtifact = {
-      schemaVersion: 2,
-      level: "coarse",
-      coordScale: artifact.coordScale,
-      rows: artifact.rows.filter((r) => r.polityId === soloId),
-      geometry: Object.fromEntries(
-        Object.entries(artifact.geometry).filter(([id]) => id.startsWith(soloId)),
-      ),
-    };
-    const alone = buildPalette(soloOnly).colourFor(soloId);
-
-    expect(withGroup).toBe(alone);
+    const { artifact, soloId } = buildMergeArtifact();
+    const palette = buildPalette(artifact);
+    const index = buildPolityIndex(artifact);
+    const knownPolityIds = new Set(artifact.rows.map((r) => r.polityId));
+    const entry = index.get(`${soloId}@1900`);
+    expect(entry).toBeDefined();
+    const colour = colourForDraw(entry as NonNullable<typeof entry>, "on", palette, knownPolityIds);
+    expect(colour).toBe(palette.colourFor(soloId));
   });
 
-  // The >4-member case named in the brief: a 5th member must repeat an
-  // earlier member's exact shade (the cycle wraps at SHADE_COUNT = 4), not
-  // get a fifth distinct one that does not exist. A wrong value here would
-  // be five mutually distinct colours (declination not cycling at all, or
-  // silently growing the shade ladder) instead of member 4 exactly
-  // repeating member 0.
-  it("repeats a shade once an aggregate exceeds 4 members", () => {
-    const { artifact, aggregateId, memberIds } = buildDeclinationArtifact(5);
+  // The dangling-reference safety net, run through the real palette: a
+  // member whose memberOf names a polity absent from this artifact's rows
+  // must fall back to its own colour rather than crash or colour by a name
+  // that draws nothing. A wrong value here would be a thrown error (palette
+  // asked to look up an id it never assigned a graph colour to still returns
+  // a hash colour, so this would not throw from the palette itself -- the
+  // crash this guards is colourForDraw handing colourFor a dangling id at
+  // all) or a colour computed from "name:(Ghost Empire)" instead of from
+  // "name:Dangling Colony".
+  it("falls back to a member's own colour when memberOf is unknown, without crashing", () => {
+    const { artifact, danglingId } = buildMergeArtifact();
     const palette = buildPalette(artifact);
-    const first = palette.colourForMember(aggregateId, memberIds[0] as string);
-    const fifth = palette.colourForMember(aggregateId, memberIds[4] as string);
-    expect(fifth).toBe(first);
+    const index = buildPolityIndex(artifact);
+    const knownPolityIds = new Set(artifact.rows.map((r) => r.polityId));
+    const entry = index.get(`${danglingId}@1900`);
+    expect(entry).toBeDefined();
+    expect(() =>
+      colourForDraw(entry as NonNullable<typeof entry>, "on", palette, knownPolityIds),
+    ).not.toThrow();
+    const colour = colourForDraw(entry as NonNullable<typeof entry>, "on", palette, knownPolityIds);
+    expect(colour).toBe(palette.colourFor(danglingId));
   });
 });
 

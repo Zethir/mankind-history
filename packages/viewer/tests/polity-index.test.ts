@@ -103,7 +103,7 @@ describe("buildPolityIndex", () => {
   // comment), so the non-null case needs a synthetic artifact. A wrong value
   // here -- e.g. the index returning the component's own polityId instead of
   // the aggregate's, or dropping memberOf and reading undefined -- would make
-  // "parent" mode fall back to the component's own colour instead of the
+  // "on" mode fall back to the component's own colour instead of the
   // aggregate's, silently undoing the whole feature.
   it("resolves memberOf for a version that belongs to an aggregate", () => {
     const index = buildPolityIndex(buildMembershipArtifact());

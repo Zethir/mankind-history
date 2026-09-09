@@ -6,16 +6,14 @@ import type { RenderMode } from "../render/render-mode";
 
 /**
  * Labelled by effect, not mechanism, so the owner can pick a mode without
- * reading render-mode.ts: "Off" is today's behaviour (the baseline being
- * compared against), "Outline" draws the empire's boundary over its
- * already-coloured components, and "Merged" is the one that actually answers
- * the motivating question -- French Africa and metropolitan France sharing a
- * colour -- by having every component borrow its aggregate's colour.
+ * reading render-mode.ts. "Off" is the pre-change baseline, kept only for
+ * comparison. "Merged" is the shipped behaviour: every component takes its
+ * aggregate's colour, with the empire's boundary stroked over the top --
+ * see docs/decisions/0019-merged-fill-with-boundary.md.
  */
 const MODE_LABELS: Record<RenderMode, string> = {
-  none: "Off",
-  outline: "Outline",
-  parent: "Merged",
+  off: "Off",
+  on: "Merged",
 };
 
 /**

@@ -1,6 +1,11 @@
 # 0018 — A 1970s family palette, superseding 0016's saturation tiers
 
-**Status:** accepted, supersedes decision 0016
+**Status:** accepted, supersedes decision 0016. Its declination mechanism and
+three-mode render surface (`none`/`outline`/`parent`) are superseded in turn
+by decision 0019 after the owner compared all three on the live map and
+rejected declination -- the palette itself (10 families, 4 shades, the
+measurements below) is unaffected and still current. See 0019 for the
+argument.
 
 ## Context
 

@@ -3,28 +3,31 @@ import { equalEarthInverse } from "@history/model";
 import { FADE_SECONDS, SPEED_STEPS } from "../engine/constants";
 
 /**
- * One family palette, not two saturation tiers.
+ * One family palette, not two saturation tiers, and one colour per polity --
+ * no declination.
  *
  * Decision 0016 split the palette into a saturated "tier 1" (sprawling
  * empires, graph-coloured for a hard no-collision guarantee) and a muted
  * "tier 2" (everyone else, hash-assigned), told apart by saturation alone so
- * an empire could never read as just another local polity. That design is
- * superseded, not discarded -- the guarantee it exists to make is preserved
- * below, unchanged in mechanism. What changes is the colour space it draws
- * from and one new rule: an empire's *members* now render as shades of one
- * hue, so the group reads as a family instead of a scatter of unrelated
- * colours. See docs/decisions/0018-family-palette.md for the full argument,
- * including why this drops tier 2's old guarantee that a sprawling empire
- * could never coincide with a local polity's exact colour.
+ * an empire could never read as just another local polity. Decision 0018
+ * replaced the two saturation tiers with one shared 40-colour, 1970s-styled
+ * space (kept below, unchanged) and, in the same revision, tried having an
+ * empire's *members* render as shades of the aggregate's family
+ * ("declination"). That second part is reverted here: see
+ * docs/decisions/0019-merged-fill-with-boundary.md for why -- in short, the
+ * owner watched it on the map and reported
+ * that two adjacent empires' shade families read as mush, and reverting also
+ * happens to remove a real defect (declination let a member's colour skip
+ * the sprawl-guarantee graph entirely, producing 49 real on-screen
+ * collisions against the real dist/; see the report this shipped with for
+ * the post-revert count).
  *
  * The palette itself: 10 hue families (hue/saturation pairs chosen for 1970s
  * character -- warm earths at higher saturation, greens and teals muted, no
- * blues or magentas) x 4 lightness shades = 40 colours total. This replaces
- * both the old 40-colour tier-1 space and the old 36-colour tier-2 space with
- * one shared 40-colour space; there is no longer a separate saturation band
- * for "everyone else."
+ * blues or magentas) x 4 lightness shades = 40 colours total.
  *
- * Three populations draw from this one space:
+ * Two populations draw from this one space, exactly as decision 0016 always
+ * did:
  *
  * 1. Aggregates (any polity ever named by another version's `memberOf` --
  *    Version.memberOf, schema 2, decision 0017) and ordinary sprawling
@@ -36,29 +39,22 @@ import { FADE_SECONDS, SPEED_STEPS } from "../engine/constants";
  *    member-version's intervals recorded under their name -- an aggregate
  *    whose own drawn territory is just a small metropole (so it would never
  *    qualify as "sprawling" on its own bbox) still needs a colour no
- *    co-visible sprawling neighbour shares, and still needs a family for its
- *    members to borrow. Folding both populations into one graph is what
- *    keeps the guarantee true for aggregates too: decision 0016's guarantee
- *    was "no two sprawling empires share a colour" and an aggregate is
- *    exactly that, even when none of its own directly-held territory sprawls.
+ *    co-visible sprawling neighbour shares. A member polity that
+ *    independently qualifies as sprawling (a colonial territory whose own
+ *    bounding box spans continents) is *not* excluded from this population --
+ *    it competes for, and holds, its own graph-coloured slot like any other
+ *    sprawling candidate, which is exactly the guarantee declination used to
+ *    override.
  *
- * 2. Members (a version whose `memberOf` names a polity in population 1) do
- *    not get their own graph-coloured or hashed colour at all. They borrow
- *    their aggregate's family (the hue/saturation half of whatever colour
- *    population 1 assigned it) and pick a shade deterministically within it
- *    -- see `colourForMember`. This is declination, and it wins over the
- *    sprawl guarantee for members: a member polity that would otherwise
- *    qualify as independently sprawling (e.g. a colonial territory whose own
- *    bounding box spans continents) is excluded from population 1 entirely
- *    and never competes for a graph-coloured slot, because its colour is
- *    never independent of its empire's in the first place. The guarantee
- *    keeps binding non-members, including every aggregate -- see the report
- *    this shipped with for whether that trade actually produces a visible
- *    collision on the real data.
+ * 2. Everyone else -- compact, unaffiliated polities, and any member that
+ *    does not independently qualify as sprawling -- is hash-assigned into the
+ *    same 40-colour space.
  *
- * 3. Everyone else -- compact, unaffiliated polities -- is hash-assigned into
- *    the same 40-colour space, same mechanism as the old tier 2, just no
- *    longer desaturated relative to population 1.
+ * `colourFor` is the only lookup either population needs. What a *member's*
+ * version actually renders as (its own `colourFor` result, or its
+ * aggregate's, for the merged fill) is a rendering choice made in
+ * render-mode.ts, not a fact this module computes -- this module only ever
+ * assigns one colour per polity.
  */
 
 /** Degrees of longitude a polity's widest version must span to be "sprawling". */
@@ -123,17 +119,6 @@ const COLOUR_COUNT = FAMILY_COUNT * SHADE_COUNT;
 
 export interface Palette {
   colourFor(polityId: string): string;
-  /**
-   * A member's declined colour: a shade of `aggregatePolityId`'s family,
-   * chosen deterministically for `memberPolityId` (see `buildPalette`'s
-   * `memberShadeOf`). Never the same computation as `colourFor` -- a member
-   * does not have an independent graph-coloured or hashed colour of its own
-   * to fall back to; this method is the only source of one for it. Callers
-   * (`colourForDraw`) already know `aggregatePolityId` is a real polity in
-   * this artifact before calling this -- see decision 0017's dangling-name
-   * discussion for why that check has to happen at the call site, not here.
-   */
-  colourForMember(aggregatePolityId: string, memberPolityId: string): string;
 }
 
 /** FNV-1a. Any stable hash works; this one is short and has no dependencies. */
@@ -154,18 +139,13 @@ function familyShadeColour(familyIndex: number, shadeIndex: number): string {
 
 /**
  * Decomposes a graph-colouring index into a family/shade pair. Modulo guards
- * `colourFor`/`colourForMember`'s total-function contract if the real
- * co-visibility graph ever needs more than `COLOUR_COUNT` colours -- see
- * `warnOnOverflow`, which is what makes that case observable instead of a
- * silent wrong answer.
+ * `colourFor`'s total-function contract if the real co-visibility graph ever
+ * needs more than `COLOUR_COUNT` colours -- see `warnOnOverflow`, which is
+ * what makes that case observable instead of a silent wrong answer.
  */
 function colourFromIndex(colourIndex: number): string {
   const i = colourIndex % COLOUR_COUNT;
   return familyShadeColour(i % FAMILY_COUNT, Math.floor(i / FAMILY_COUNT));
-}
-
-function familyIndexFromColourIndex(colourIndex: number): number {
-  return (colourIndex % COLOUR_COUNT) % FAMILY_COUNT;
 }
 
 function hashColour(polityId: string): string {
@@ -321,10 +301,9 @@ function warnOnOverflow(colourIndexOf: ReadonlyMap<string, number>): void {
 
 /**
  * Builds a colour lookup from the dataset itself: which polities are
- * "sprawling", which are aggregates, their graph-coloured assignments, and
- * every aggregate's member shades all depend on every version in this
- * artifact, not just the id being coloured. The hash fallback stays a pure
- * function of the id alone.
+ * "sprawling", which are aggregates, and their graph-coloured assignments all
+ * depend on every version in this artifact, not just the id being coloured.
+ * The hash fallback stays a pure function of the id alone.
  */
 export function buildPalette(versions: VersionsArtifact): Palette {
   const versionsByPolity = new Map<string, Version[]>();
@@ -336,10 +315,9 @@ export function buildPalette(versions: VersionsArtifact): Palette {
 
   // Every polity ever named by another version's memberOf. `memberVersionsOf`
   // collects the actual member rows recorded under each aggregate's name --
-  // needed both to widen the aggregate's own co-visibility interval (a
+  // needed to widen the aggregate's own co-visibility interval: a
   // metropole-only aggregate is "live" for as long as any of its members are
-  // drawn, not just while its own version is) and to enumerate its distinct
-  // members for shade cycling below.
+  // drawn, not just while its own version is.
   const memberVersionsOf = new Map<string, Version[]>();
   for (const row of versions.rows) {
     if (row.memberOf === null) continue;
@@ -391,47 +369,9 @@ export function buildPalette(versions: VersionsArtifact): Palette {
     graphColours.set(id, colourFromIndex(colourIndex));
   }
 
-  const familyOfAggregate = new Map<string, number>();
-  for (const aggregateId of aggregateIds) {
-    const colourIndex = colourIndexOf.get(aggregateId) as number;
-    familyOfAggregate.set(aggregateId, familyIndexFromColourIndex(colourIndex));
-  }
-
-  // Each aggregate's distinct members, sorted for a deterministic cycle
-  // position. Shade repeats inside one empire past the 4th member are
-  // expected and acceptable, not a bug to fix: the shared hue already says
-  // "same empire," and the ordinary per-polity outline (canvas.ts) separates
-  // any two neighbours that land on the same shade. Median empire-year in
-  // the real data has 2 members and the max is 20, so most empires never
-  // reach a repeat at all.
-  const memberShadeOf = new Map<string, Map<string, number>>();
-  for (const aggregateId of aggregateIds) {
-    const distinctMembers = [
-      ...new Set((memberVersionsOf.get(aggregateId) ?? []).map((v) => v.polityId)),
-    ];
-    distinctMembers.sort();
-    const shadeOf = new Map<string, number>();
-    distinctMembers.forEach((memberId, index) => {
-      shadeOf.set(memberId, index % SHADE_COUNT);
-    });
-    memberShadeOf.set(aggregateId, shadeOf);
-  }
-
   return {
     colourFor(polityId: string): string {
       return graphColours.get(polityId) ?? hashColour(polityId);
-    },
-    colourForMember(aggregatePolityId: string, memberPolityId: string): string {
-      const family = familyOfAggregate.get(aggregatePolityId);
-      if (family === undefined) {
-        // Defensive only: every memberOf value observed above is guaranteed
-        // a family, since aggregateIds is built from exactly the same rows.
-        // Kept so this method stays total rather than throwing if that
-        // invariant is ever violated by a future caller.
-        return hashColour(memberPolityId);
-      }
-      const shade = memberShadeOf.get(aggregatePolityId)?.get(memberPolityId) ?? 0;
-      return familyShadeColour(family, shade);
     },
   };
 }

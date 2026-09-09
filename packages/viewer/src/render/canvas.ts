@@ -26,39 +26,49 @@ const LAND = "#2b3440";
 const FLASH = "#fdf6e3";
 /**
  * Stroked around every filled polity, after the fill, so two neighbours that
- * land on the same palette colour (declination deliberately repeats shades
- * within one empire past 4 members, and the hash-assigned remainder can
- * still collide by chance -- see docs/decisions/0018) read as separate
- * shapes instead of merging into one blob. Darker than both ground tones --
- * LAND is #2b3440, SEA is #101b26 -- so it reads as a seam on every fill,
- * including the darkest palette lightness band, rather than disappearing
- * into the plate the way a mid-tone stroke would over SEA.
+ * land on the same palette colour (the hash-assigned population can collide
+ * by chance, and in "on" mode every member of one empire shares its
+ * aggregate's exact colour by design -- see docs/decisions/0019) read as
+ * separate shapes instead of merging into one blob. Darker than both ground
+ * tones -- LAND is #2b3440, SEA is #101b26 -- so it reads as a seam on every
+ * fill, including the darkest palette lightness band, rather than
+ * disappearing into the plate the way a mid-tone stroke would over SEA.
+ * Also the empire-boundary stroke's colour (see `AGGREGATE_OUTLINE_WIDTH`):
+ * a same-colour-as-fill boundary would be invisible exactly where it matters
+ * most, an unrelated neighbour sharing the empire's colour.
  */
 const OUTLINE = "#04070a";
 
+/** Ordinary per-polity outline width: internal divisions, not the point. */
+const POLITY_OUTLINE_WIDTH = 0.75;
+
 /**
- * Heavier than the ordinary per-polity outline (1) so an aggregate's boundary
- * still reads as a deliberate "this is the empire" mark in "outline" mode,
- * not just another polity seam -- but only just heavier. The family palette
- * (docs/decisions/0018-family-palette.md) already does most of the work of
- * saying "these are one empire" by shading every member the same hue, so the
- * stroke no longer has to carry that signal alone the way it did at 3px;
- * 1.5px is enough to separate "this line means something" from the ordinary
- * 1px seam without the outline mode reading as busier than the fill colours
- * underneath it.
+ * The empire boundary: drawn over every live aggregate's shape in "on" mode
+ * (docs/decisions/0019), in the same dark `OUTLINE` colour as the ordinary
+ * per-polity seam, just heavier -- twice `POLITY_OUTLINE_WIDTH`, so the
+ * hierarchy ("this line is a member boundary" vs. "this line is the empire's
+ * edge") reads from the ratio between the two rather than from either one's
+ * absolute weight. The owner called a 3px stroke (this project's very first
+ * attempt) "super thick"; 1.5px against a 0.75px ordinary seam is
+ * perceptibly heavier without being thick in its own right. Not judged by a
+ * human watching the map yet, same caveat every stroke-weight choice in this
+ * project has shipped with.
  */
 const AGGREGATE_OUTLINE_WIDTH = 1.5;
 
 export class MapRenderer {
   readonly viewport: Viewport;
   /**
-   * Which of the three render modes (render-mode.ts) aggregate polities
-   * render under. Public and mutable, read directly by draw() every frame,
-   * so the chrome's control can set it and read it back with no shadow state
-   * of its own -- the same pattern engine.playing and clock.userSpeed
-   * already use.
+   * Whether aggregate polities render merged with their members
+   * (render-mode.ts). Public and mutable, read directly by draw() every
+   * frame, so the chrome's control can set it and read it back with no
+   * shadow state of its own -- the same pattern engine.playing and
+   * clock.userSpeed already use. Defaults to "on": merged fill plus empire
+   * boundary is the shipped behaviour, not an experiment; "off" stays
+   * available so the owner can still compare against the pre-change
+   * baseline.
    */
-  mode: RenderMode = "none";
+  mode: RenderMode = "on";
   private readonly ctx: CanvasRenderingContext2D;
   private readonly paths = new Map<string, Path2D>();
   private readonly polityOf: Map<string, PolityIndexEntry>;
@@ -139,7 +149,7 @@ export class MapRenderer {
       // Same globalAlpha as the fill, so the outline fades with the version
       // rather than persisting as a solid line after the shape has faded out.
       ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 1;
+      ctx.lineWidth = POLITY_OUTLINE_WIDTH;
       ctx.stroke(path);
       if (d.flash > 0) {
         ctx.globalAlpha = d.alpha * d.flash * 0.55;
@@ -148,12 +158,15 @@ export class MapRenderer {
       }
     }
 
-    // "outline" mode: every fill (and its ordinary 1px seam) is down, so an
-    // aggregate polity live this frame can have its own boundary lifted above
-    // all of it, in its own colour. The aggregate's fill stays exactly where
-    // the loop above left it -- buried under its components, since it sorted
-    // first by area -- only the stroke is added here.
-    if (this.mode === "outline") {
+    // "on" mode: every fill (and its ordinary seam) is down, including every
+    // member merged into its aggregate's colour, so an aggregate polity live
+    // this frame can have its own boundary lifted above all of it, in the
+    // same dark OUTLINE colour as the ordinary seam -- never the empire's own
+    // fill colour, which would be invisible exactly where a neighbour shares
+    // it. The aggregate's fill stays exactly where the loop above left it --
+    // buried under its components, since it sorted first by area -- only the
+    // stroke is added here.
+    if (this.mode === "on") {
       for (const d of ordered) {
         const entry = this.polityOf.get(d.versionId);
         if (entry === undefined) continue;
@@ -161,7 +174,7 @@ export class MapRenderer {
         const path = this.pathFor(d.versionId);
         if (!path) continue;
         ctx.globalAlpha = d.alpha;
-        ctx.strokeStyle = this.palette.colourFor(entry.polityId);
+        ctx.strokeStyle = OUTLINE;
         ctx.lineWidth = AGGREGATE_OUTLINE_WIDTH;
         ctx.stroke(path);
       }

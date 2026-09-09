@@ -243,6 +243,9 @@ function makeVersion(id: string, polityId: string, fromYear: number, toYear: num
     fromYear,
     toYear,
     area: 1000,
+    // Schema 2 added membership. These synthetic polities stand alone: none is
+    // a member of an aggregate, which is what the palette tests are about.
+    memberOf: null,
     prevId: null,
     delta: null,
     gap: null,

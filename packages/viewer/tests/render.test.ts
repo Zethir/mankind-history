@@ -2,7 +2,12 @@ import type { PolitiesArtifact, Version, VersionGeometry, VersionsArtifact } fro
 import { COORD_SCALE, equalEarth, WORLD_HALF_HEIGHT, WORLD_HALF_WIDTH } from "@history/model";
 import { readArtifact } from "@history/model/artifact";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildAggregateParents, buildPalette } from "../src/render/palette";
+import {
+  buildAggregateParents,
+  buildPalette,
+  FAMILIES,
+  SHADE_LIGHTNESS,
+} from "../src/render/palette";
 import { buildPolityIndex } from "../src/render/polity-index";
 import { colourForDraw } from "../src/render/render-mode";
 import { fitWorld, fromScreen, toScreen } from "../src/render/transform";
@@ -133,14 +138,23 @@ describe("palette", () => {
   // same id they colour, so neither can catch a changed palette. This golden
   // vector is the deliberate diff: a feel-session tweak to a hue or
   // lightness constant shows up here as a failing object-diff naming every
-  // polity whose colour moved, rather than passing silently. Verified by
-  // temporarily changing FAMILIES[0]'s hue from 0 to 5 -- see the report
-  // this shipped with for both the failing and the restored-green run.
+  // polity whose colour moved, rather than passing silently.
   //
-  // Regenerated for the proximity-graph fix (this revision). Three of these
-  // twelve fixture polities qualify as sprawling (a version bounding box
-  // spanning more than 45 degrees of longitude): Eastern Roman Empire
-  // (Justinian's African and Italian reconquest, 536-554, spans ~47
+  // Regenerated for this revision's two fixes: the near-duplicate FAMILIES
+  // pair ({hue: 40, saturation: 55} vs {hue: 45, saturation: 50}, deltaE
+  // 3.33 -- see the module comment on `FAMILIES` in palette.ts) replaced
+  // with a set measured at true all-pairs minimum deltaE 10.46, and
+  // `greedyColour` changed from "smallest free index" to "least-used-so-far"
+  // (see its comment in palette.ts) so low-degree candidates stop all
+  // piling onto the lightest shade band. Verified by temporarily restoring
+  // the old {hue: 40, saturation: 55}/{hue: 45, saturation: 50} families and
+  // confirming this test fails with the object-diff naming every affected
+  // polity, then restoring the fix and confirming it passes again -- see the
+  // report this shipped with for both runs.
+  //
+  // Three of these twelve fixture polities qualify as sprawling (a version
+  // bounding box spanning more than 45 degrees of longitude): Eastern Roman
+  // Empire (Justinian's African and Italian reconquest, 536-554, spans ~47
   // degrees), Kingdom of Italy (a small Tianjin concession held 1901-1943
   // alongside the mainland pushes several of its interwar versions past 110
   // degrees), and Nazi Germany (occupied territory reaching from France to
@@ -151,39 +165,34 @@ describe("palette", () => {
   // merged-mode tests below for that. This fixture still exercises the
   // sprawl guarantee for real: Kingdom of Italy and Nazi Germany are both
   // sprawling and genuinely co-visible (1936-1943), and get different
-  // colours (family 0 vs family 1) below.
+  // colours (family 0 vs family 4) below.
   //
-  // Seven of the twelve moved from the previous (co-visibility-only) golden
-  // vector once proximity edges were unioned in, and every move is a real,
-  // previously-missed adjacency, not noise: Papal States now avoids Kingdom
-  // of Italy's colour (they genuinely overlap, 1861-1870, in the same place,
-  // Rome -- Italy annexed the Papal States) instead of sharing a colour with
-  // it by coincidence of an unrelated hash; Ostrogothic Kingdom avoids
-  // Eastern Roman Empire's (Justinian's reconquest of Ostrogothic Italy,
-  // 536-553, is exactly this pair, in Italy, at the same time); Roman
-  // Kingdom avoids Etruscans (contemporaneous, same region). Several of the
-  // newly-graph-coloured entrants (Ostrogothic Kingdom, Papal States, Roman
-  // Kingdom, Vandal Kingdom, Visigoths) land on the *same* colour as each
-  // other here -- that is correct, not a regression: none of those pairs is
-  // ever actually co-visible in time (millennia or centuries apart), so
-  // nothing in either graph ever demands they differ. A script checking
-  // every pair of these twelve polities for genuine time-and-bbox adjacency
-  // against this exact golden vector found zero same-colour pairs that are
-  // also adjacent (see the report this shipped with).
+  // All twelve now land on twelve *distinct* colours -- a direct, visible
+  // consequence of the least-used-so-far tie-break: under the old
+  // smallest-free-index rule, six of these twelve (Nazi Germany, Ostrogothic
+  // Kingdom, Papal States, Roman Kingdom, Vandal Kingdom, Visigoths) shared
+  // one identical colour and four more (Eastern Roman Empire, Etruscans,
+  // Kingdom of Italy, Western Roman Empire) shared another, four distinct
+  // colours across all twelve in total. None of the newly-separated pairs
+  // needed distinguishing by either graph guarantee (they are never
+  // genuinely co-visible or spatially adjacent to each other) -- this is
+  // finding 3's fix (1,235 of 1,583 real polities collapsing into the
+  // lightest shade band) made visible on a small fixture, not a new
+  // collision-avoidance guarantee.
   it("matches the committed golden colours for the fixture's polities", () => {
     const golden: Record<string, string> = {
-      "name:Eastern Roman Empire": "hsl(0 50% 74%)",
-      "name:Etruscans": "hsl(0 50% 74%)",
-      "name:Kingdom of Italy": "hsl(0 50% 74%)",
-      "name:Nazi Germany": "hsl(22 30% 74%)",
-      "name:Ostrogothic Kingdom": "hsl(22 30% 74%)",
-      "name:Papal States": "hsl(22 30% 74%)",
-      "name:Republic of Italy": "hsl(0 50% 28%)",
-      "name:Roman Kingdom": "hsl(22 30% 74%)",
-      "name:Roman Republic": "hsl(200 26% 58%)",
-      "name:Vandal Kingdom": "hsl(22 30% 74%)",
-      "name:Visigoths": "hsl(22 30% 74%)",
-      "name:Western Roman Empire": "hsl(0 50% 74%)",
+      "name:Eastern Roman Empire": "hsl(48 62% 74%)",
+      "name:Etruscans": "hsl(68 32% 74%)",
+      "name:Kingdom of Italy": "hsl(5 58% 74%)",
+      "name:Nazi Germany": "hsl(95 42% 74%)",
+      "name:Ostrogothic Kingdom": "hsl(135 28% 74%)",
+      "name:Papal States": "hsl(168 32% 74%)",
+      "name:Republic of Italy": "hsl(5 58% 28%)",
+      "name:Roman Kingdom": "hsl(195 38% 74%)",
+      "name:Roman Republic": "hsl(330 22% 58%)",
+      "name:Vandal Kingdom": "hsl(220 34% 74%)",
+      "name:Visigoths": "hsl(330 22% 74%)",
+      "name:Western Roman Empire": "hsl(30 62% 74%)",
     };
     const palette = buildPalette(versions);
     const actual: Record<string, string> = {};
@@ -235,6 +244,135 @@ describe("palette", () => {
     const italy = palette.colourFor("name:Kingdom of Italy");
     const germany = palette.colourFor("name:Nazi Germany");
     expect(italy).not.toBe(germany);
+  });
+});
+
+/**
+ * CIE76 deltaE over CIELAB, computed from an HSL triple: sRGB -> linear sRGB
+ * -> XYZ (D65) -> CIELAB -> Euclidean distance. Implemented here, independent
+ * of anything palette.ts does, because a regression test that reused the
+ * production colour-space code could not catch a bug in that code -- and this
+ * exact failure mode already happened once: an earlier CIE76 measurement
+ * reported 11.9 as the palette's minimum deltaE and zero confusable pairs, a
+ * figure that was wrong because the script that produced it built its
+ * candidate pool with duplicate keys and ended up comparing colours other
+ * than the ones actually shipped (see the module comment on `FAMILIES` in
+ * palette.ts). A silently wrong colour-space conversion here would be exactly
+ * that failure again, just moved into the test -- which is why the sanity
+ * checks below exist: they pin this implementation against two independently
+ * known reference conversions before it is trusted to grade the real
+ * palette.
+ */
+function hslToRgb(
+  hue: number,
+  saturationPct: number,
+  lightnessPct: number,
+): [number, number, number] {
+  const s = saturationPct / 100;
+  const l = lightnessPct / 100;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const hp = hue / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1));
+  let [r, g, b] = [0, 0, 0];
+  if (hp < 1) [r, g, b] = [c, x, 0];
+  else if (hp < 2) [r, g, b] = [x, c, 0];
+  else if (hp < 3) [r, g, b] = [0, c, x];
+  else if (hp < 4) [r, g, b] = [0, x, c];
+  else if (hp < 5) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  const m = l - c / 2;
+  return [r + m, g + m, b + m];
+}
+
+function srgbChannelToLinear(u: number): number {
+  return u <= 0.04045 ? u / 12.92 : ((u + 0.055) / 1.055) ** 2.4;
+}
+
+/** sRGB (D65) to CIEXYZ, IEC 61966-2-1 matrix coefficients. */
+function rgbToXyz(r: number, g: number, b: number): [number, number, number] {
+  const [rl, gl, bl] = [srgbChannelToLinear(r), srgbChannelToLinear(g), srgbChannelToLinear(b)];
+  const x = rl * 0.4124564 + gl * 0.3575761 + bl * 0.1804375;
+  const y = rl * 0.2126729 + gl * 0.7151522 + bl * 0.072175;
+  const z = rl * 0.0193339 + gl * 0.119192 + bl * 0.9503041;
+  return [x, y, z];
+}
+
+/** D65 reference white. */
+const XYZ_WHITE: [number, number, number] = [0.95047, 1.0, 1.08883];
+
+function labF(t: number): number {
+  return t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+}
+
+function xyzToLab(x: number, y: number, z: number): [number, number, number] {
+  const [fx, fy, fz] = [labF(x / XYZ_WHITE[0]), labF(y / XYZ_WHITE[1]), labF(z / XYZ_WHITE[2])];
+  const l = 116 * fy - 16;
+  const a = 500 * (fx - fy);
+  const bStar = 200 * (fy - fz);
+  return [l, a, bStar];
+}
+
+function hslToLab(
+  hue: number,
+  saturationPct: number,
+  lightnessPct: number,
+): [number, number, number] {
+  const [r, g, b] = hslToRgb(hue, saturationPct, lightnessPct);
+  return xyzToLab(...rgbToXyz(r, g, b));
+}
+
+function deltaE76(
+  a: readonly [number, number, number],
+  b: readonly [number, number, number],
+): number {
+  const [dl, da, db] = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  return Math.sqrt(dl * dl + da * da + db * db);
+}
+
+describe("palette: colour distinctness (CIE76)", () => {
+  // Sanity-checks the conversion pipeline above against two independently
+  // known references before trusting it to grade the real palette -- see the
+  // block comment above these helpers for why this step is not optional.
+  it("computes L*=100 for white and the known Lab of pure red", () => {
+    const white = hslToLab(0, 0, 100);
+    expect(white[0]).toBeCloseTo(100, 1);
+    expect(white[1]).toBeCloseTo(0, 1);
+    expect(white[2]).toBeCloseTo(0, 1);
+
+    const red = hslToLab(0, 100, 50);
+    expect(red[0]).toBeCloseTo(53.2, 1);
+    expect(red[1]).toBeCloseTo(80.1, 1);
+    expect(red[2]).toBeCloseTo(67.2, 1);
+  });
+
+  // The regression itself: true all-pairs minimum CIE76 deltaE over the 40
+  // shipped colours (10 FAMILIES x 4 SHADE_LIGHTNESS, every pair including
+  // same-shade pairs across families) must stay at or above 10.0. This is
+  // the exact measurement that caught {hue: 40, saturation: 55} shipping
+  // alongside {hue: 45, saturation: 50} at deltaE 3.33 (see palette.ts's
+  // `FAMILIES` comment) -- a defect an all-pairs-including-same-shade
+  // measurement catches and a same-family-only or cross-family-only
+  // measurement would not.
+  it("keeps every pair of the 40 shipped colours at or above deltaE 10.0", () => {
+    const labs: Array<[number, number, number]> = [];
+    for (const family of FAMILIES) {
+      for (const lightness of SHADE_LIGHTNESS) {
+        labs.push(hslToLab(family.hue, family.saturation, lightness));
+      }
+    }
+    expect(labs.length).toBe(40);
+
+    let min = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < labs.length; i++) {
+      for (let j = i + 1; j < labs.length; j++) {
+        const d = deltaE76(
+          labs[i] as [number, number, number],
+          labs[j] as [number, number, number],
+        );
+        if (d < min) min = d;
+      }
+    }
+    expect(min).toBeGreaterThanOrEqual(10.0);
   });
 });
 

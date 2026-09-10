@@ -98,50 +98,59 @@ const CO_VISIBILITY_MARGIN_YEARS = Math.ceil(FADE_SECONDS * Math.max(...SPEED_ST
  * `TIER1_HUES`'s hue index played before.
  *
  * Do not grow this to fix a neighbouring-colour complaint. That was measured
- * and rejected: 40 colours give a cross-family minimum CIE76 deltaE of 11.9;
- * pushing to 72 collapses that to 6.0 with 22 confusable pairs, because past
- * roughly 40 colours people stop being able to tell them apart regardless of
- * how they are assigned (see decision 0016's "What the data says the actual
- * problem is"). The fix for two touching polities sharing a colour is
- * spending these 40 colours better -- folding spatial proximity into the
- * graph `buildPalette` colours against, below -- not adding more of them.
+ * and rejected: 40 colours give a true all-pairs minimum CIE76 deltaE of
+ * 10.46 (every pair of the 40 shipped colours, including same-shade pairs
+ * across families -- an earlier measurement that reported 11.9 and zero
+ * confusable pairs excluded those same-shade cross-family pairs from its
+ * candidate pool by mistake, which is exactly what let a near-duplicate pair
+ * ({hue: 40, saturation: 55} vs {hue: 45, saturation: 50}, deltaE 3.33 at
+ * matching shades) ship undetected); pushing to 72 collapses that to 6.0 with
+ * 22 confusable pairs, because past roughly 40 colours people stop being able
+ * to tell them apart regardless of how they are assigned (see decision
+ * 0016's "What the data says the actual problem is"). The fix for two
+ * touching polities sharing a colour is spending these 40 colours better --
+ * folding spatial proximity into the graph `buildPalette` colours against,
+ * below -- not adding more of them.
  */
-const FAMILIES: ReadonlyArray<{ readonly hue: number; readonly saturation: number }> = [
-  { hue: 0, saturation: 50 },
-  { hue: 22, saturation: 30 },
-  { hue: 25, saturation: 50 },
-  { hue: 40, saturation: 55 },
-  { hue: 45, saturation: 50 },
-  { hue: 60, saturation: 34 },
-  { hue: 90, saturation: 34 },
-  { hue: 150, saturation: 26 },
-  { hue: 180, saturation: 26 },
-  { hue: 200, saturation: 26 },
+// Exported (alongside SHADE_LIGHTNESS) so the CIE76 distinctness regression
+// test in render.test.ts measures these exact runtime constants rather than a
+// hand-copied duplicate that could silently drift from what actually ships --
+// see that test for why this measurement failed once already.
+export const FAMILIES: ReadonlyArray<{ readonly hue: number; readonly saturation: number }> = [
+  { hue: 5, saturation: 58 },
+  { hue: 30, saturation: 62 },
+  { hue: 48, saturation: 62 },
+  { hue: 68, saturation: 32 },
+  { hue: 95, saturation: 42 },
+  { hue: 135, saturation: 28 },
+  { hue: 168, saturation: 32 },
+  { hue: 195, saturation: 38 },
+  { hue: 220, saturation: 34 },
+  { hue: 330, saturation: 22 },
 ];
 
 /** Lightness ladder, lightest first. Shared by every family. */
-const SHADE_LIGHTNESS: readonly number[] = [74, 58, 42, 28];
+export const SHADE_LIGHTNESS: readonly number[] = [74, 58, 42, 28];
 
 const FAMILY_COUNT = FAMILIES.length;
 const SHADE_COUNT = SHADE_LIGHTNESS.length;
 
 /**
  * Sized the same way decision 0016 sized `TIER1_COLOUR_COUNT`, re-measured
- * each time the graph this module colours against grew: 36 against the
- * co-visibility-only graph with aggregates folded in (decision 0018), and as
- * of this revision, 35 against the *combined* co-visibility/proximity graph
- * (max proximity degree ~580, median ~10, over ~1,350 nodes -- most of them
- * ordinary compact polities with a touching neighbour, not sprawling
- * empires) -- see the report this shipped with. That the combined graph
- * needs *fewer* colours than the co-visibility-only graph once did is not a
- * contradiction: proximity edges mostly connect small, low-degree compact
- * polities that were previously unconstrained (hash-assigned) and easy for
- * greedy colouring to slot in, while the union only ever adds constraints,
- * never removes the sprawling-empire ones decision 0016/0018 measured. 40
- * still leaves headroom past 35 for a denser re-blessed dataset, a wider
- * margin, or a stricter proximity test, without silently wrapping.
- * `warnOnOverflow` is what makes exceeding it observable instead of a silent
- * wrong answer, unchanged in mechanism from decision 0016.
+ * each time the graph this module colours against grew, or the colouring
+ * rule inside it changed: 36 against the co-visibility-only graph with
+ * aggregates folded in (decision 0018), 35 against the *combined*
+ * co-visibility/proximity graph under "smallest free index" (max proximity
+ * degree ~580, median ~10, over ~1,350 nodes -- most of them ordinary
+ * compact polities with a touching neighbour, not sprawling empires), and as
+ * of this revision, all 40 under `greedyColour`'s least-used-so-far rule
+ * (see that function's comment) -- still without overflowing, confirmed
+ * against the real dist/, but leaving zero headroom rather than the 5 the
+ * previous rule left. That last change is deliberate: spending every
+ * reserved colour evenly (finding 3) is worth the lost margin, and
+ * `warnOnOverflow` is what makes a future dataset that actually needs more
+ * than 40 observable instead of a silent wrong answer, unchanged in
+ * mechanism from decision 0016.
  */
 const COLOUR_COUNT = FAMILY_COUNT * SHADE_COUNT;
 
@@ -472,9 +481,36 @@ function buildProximityGraph(
 
 /**
  * Greedy graph colouring: visit nodes by descending degree (the hardest to
- * place first), breaking ties on id so the result is deterministic, and give
- * each one the smallest colour index none of its already-coloured neighbours
- * holds. Unchanged from decision 0016.
+ * place first), breaking ties on id so the result is deterministic. Each node
+ * gets the *least-used-so-far* colour index among those no already-coloured
+ * neighbour holds, tie-breaking on the lower index -- not simply the smallest
+ * free index (decision 0016's original rule).
+ *
+ * That change matters because `colourFromIndex` maps every one of indices
+ * 0-9 to the same (lightest) shade band: "smallest free index" was measured
+ * against the real dist/ to pack 1,235 of 1,583 polities (78%) into that one
+ * band alone, because it is trivially free for almost every low-degree node
+ * and greedy never has a reason not to take it. Least-used-so-far spends the
+ * four shade bands roughly evenly instead, without weakening either
+ * no-collision guarantee this function exists for: it only ever chooses among
+ * indices already verified free of every neighbour's colour, so two adjacent
+ * nodes still never share an index, and visiting order (and therefore the
+ * whole result) is still a deterministic function of the graph alone.
+ *
+ * The least-used search is bounded to `COLOUR_COUNT` (the 40 real colours),
+ * not to however many nodes have been coloured so far. Searching an
+ * unbounded, ever-growing range was tried and measured broken: for almost
+ * every low-degree node early in `order`, some index past 40 has *never*
+ * been used at all (count 0), which beats reusing any of the 40 real colours
+ * (count >= 1) under a naive least-used comparison -- so the search would
+ * keep minting brand-new indices instead of spending the 40 that exist,
+ * needing 1,348 distinct indices against the real dist/ (confirmed) instead
+ * of the ~35 decision 0016 always measured. Capping the search to
+ * `COLOUR_COUNT` forces genuine reuse of the 4 shade bands; only once every
+ * one of the 40 is excluded by some neighbour does this fall back to the
+ * smallest free index beyond 40, the same overflow behaviour decision 0016
+ * always had (see `warnOnOverflow`) and the one the colour-reservation
+ * overflow test below still exercises.
  */
 function greedyColour(adjacency: ReadonlyMap<string, Set<string>>): Map<string, number> {
   const order = [...adjacency.keys()].sort((a, b) => {
@@ -485,15 +521,37 @@ function greedyColour(adjacency: ReadonlyMap<string, Set<string>>): Map<string, 
   });
 
   const colourOf = new Map<string, number>();
+  const useCount = new Map<number, number>();
   for (const id of order) {
     const used = new Set<number>();
     for (const neighbour of adjacency.get(id) as Set<string>) {
       const c = colourOf.get(neighbour);
       if (c !== undefined) used.add(c);
     }
-    let c = 0;
-    while (used.has(c)) c++;
-    colourOf.set(id, c);
+    let best = -1;
+    let bestCount = Infinity;
+    // Ties go to the lower index (loop order), matching decision 0016's
+    // original tie-break.
+    for (let c = 0; c < COLOUR_COUNT; c++) {
+      if (used.has(c)) continue;
+      const count = useCount.get(c) ?? 0;
+      if (count < bestCount) {
+        bestCount = count;
+        best = c;
+      }
+    }
+    if (best === -1) {
+      // Overflow: every one of the 40 reserved indices is excluded by some
+      // already-coloured neighbour. Fall back to the smallest free index
+      // beyond 40 -- decision 0016's original rule, kept for exactly this
+      // case -- so this always terminates and `warnOnOverflow` still catches
+      // it (see that function's comment).
+      let c = COLOUR_COUNT;
+      while (used.has(c)) c++;
+      best = c;
+    }
+    colourOf.set(id, best);
+    useCount.set(best, (useCount.get(best) ?? 0) + 1);
   }
   return colourOf;
 }
@@ -506,14 +564,15 @@ function greedyColour(adjacency: ReadonlyMap<string, Set<string>>): Map<string, 
  * exists to make (no two co-visible sprawling empires share a colour, no two
  * on-screen neighbours share a colour), with nothing on screen to say so.
  * This warns once per `buildPalette` call so that failure is at least loud.
- * Not expected against real data (see the report this shipped with -- 35 of
- * 40 needed against the combined co-visibility/proximity graph) but a future
- * increase to `CO_VISIBILITY_MARGIN_YEARS`, or a denser re-blessed dataset,
- * could reach it -- and unioning in the proximity graph (new in this
- * revision) makes this substantially denser than decision 0016 or 0018 ever
- * measured, which is exactly why this check still matters. If this ever
- * fires against real data, that is an overflow to report, not to silence:
- * see the module doc comment on why growing `FAMILIES` is the wrong fix.
+ * Not expected against real data (see the report this shipped with -- all 40
+ * used, zero overflow, against the combined co-visibility/proximity graph
+ * under `greedyColour`'s least-used-so-far rule) but a future increase to
+ * `CO_VISIBILITY_MARGIN_YEARS`, or a denser re-blessed dataset, could reach
+ * it -- and with zero colours of headroom left (see `COLOUR_COUNT`'s
+ * comment), it would take a smaller push to get there than it once did. If
+ * this ever fires against real data, that is an overflow to report, not to
+ * silence: see the module doc comment on why growing `FAMILIES` is the wrong
+ * fix.
  */
 function warnOnOverflow(colourIndexOf: ReadonlyMap<string, number>): void {
   let overflowCount = 0;

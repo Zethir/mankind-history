@@ -40,6 +40,9 @@ const KNOWN_POLITY_IDS = new Set([
   // still not assume.
 ]);
 
+/** No polity in this file's fixed cases is itself a member of a further aggregate. */
+const NO_PARENTS = new Map<string, string>();
+
 describe("colourForDraw", () => {
   // The one behaviour "on" mode exists for. A wrong value here -- colourFor
   // called with the member's own polityId instead of its memberOf -- would
@@ -47,7 +50,7 @@ describe("colourForDraw", () => {
   // merging is meant to fix (French Africa keeping its own colour instead of
   // sharing the empire's).
   it("gives a member its aggregate's colour in on mode", () => {
-    const colour = colourForDraw(MEMBER, "on", fakePalette, KNOWN_POLITY_IDS);
+    const colour = colourForDraw(MEMBER, "on", fakePalette, KNOWN_POLITY_IDS, NO_PARENTS);
     expect(colour).toBe("colour:name:(French Third Republic)");
   });
 
@@ -56,7 +59,7 @@ describe("colourForDraw", () => {
   // "colour:name:(French Third Republic)" -- "on" mode's merge leaking into
   // the mode that is supposed to disable it entirely.
   it("gives a member its own colour in off mode", () => {
-    const colour = colourForDraw(MEMBER, "off", fakePalette, KNOWN_POLITY_IDS);
+    const colour = colourForDraw(MEMBER, "off", fakePalette, KNOWN_POLITY_IDS, NO_PARENTS);
     expect(colour).toBe("colour:name:French Africa");
   });
 
@@ -67,7 +70,7 @@ describe("colourForDraw", () => {
   const allModes: RenderMode[] = ["off", "on"];
   for (const mode of allModes) {
     it(`gives an unaffiliated polity its own colour in ${mode} mode`, () => {
-      const colour = colourForDraw(UNAFFILIATED, mode, fakePalette, KNOWN_POLITY_IDS);
+      const colour = colourForDraw(UNAFFILIATED, mode, fakePalette, KNOWN_POLITY_IDS, NO_PARENTS);
       expect(colour).toBe("colour:name:Etruscans");
     });
   }
@@ -81,8 +84,45 @@ describe("colourForDraw", () => {
   // as firmly.
   for (const mode of allModes) {
     it(`falls back to a member's own colour when memberOf is unknown, in ${mode} mode`, () => {
-      const colour = colourForDraw(DANGLING_MEMBER, mode, fakePalette, KNOWN_POLITY_IDS);
+      const colour = colourForDraw(
+        DANGLING_MEMBER,
+        mode,
+        fakePalette,
+        KNOWN_POLITY_IDS,
+        NO_PARENTS,
+      );
       expect(colour).toBe("colour:name:Orphan Colony");
     });
   }
+
+  // Finding 2: memberOf nests (an aggregate can itself be a member of a
+  // further aggregate -- Kingdom of Bohemia -> Holy Roman Empire, Kingdom of
+  // Poland -> Polish-Lithuania Kingdom, against the real dist/). A three-level
+  // chain -- member -> mid-aggregate -> root -- must have all three draw the
+  // *root's* colour under "on" mode, not stop at the immediate memberOf. A
+  // wrong value here (resolving only one level) would give the mid-aggregate
+  // itself "colour:name:(Root Empire)" while its member gets
+  // "colour:name:(Mid Aggregate)" -- two different colours for one group,
+  // exactly the "one empire reads as two" defect this closes.
+  it("resolves a three-level membership chain to the root's colour for every level", () => {
+    const root: PolityIndexEntry = { polityId: "name:(Root Empire)", memberOf: null };
+    const mid: PolityIndexEntry = {
+      polityId: "name:(Mid Aggregate)",
+      memberOf: "name:(Root Empire)",
+    };
+    const member: PolityIndexEntry = {
+      polityId: "name:Leaf Member",
+      memberOf: "name:(Mid Aggregate)",
+    };
+    const knownIds = new Set([root.polityId, mid.polityId, member.polityId]);
+    const parents = new Map([["name:(Mid Aggregate)", "name:(Root Empire)"]]);
+
+    const rootColour = colourForDraw(root, "on", fakePalette, knownIds, parents);
+    const midColour = colourForDraw(mid, "on", fakePalette, knownIds, parents);
+    const memberColour = colourForDraw(member, "on", fakePalette, knownIds, parents);
+
+    expect(rootColour).toBe("colour:name:(Root Empire)");
+    expect(midColour).toBe("colour:name:(Root Empire)");
+    expect(memberColour).toBe("colour:name:(Root Empire)");
+  });
 });

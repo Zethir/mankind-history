@@ -294,6 +294,62 @@ function bboxesOverlap(
   return a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
 }
 
+/**
+ * Every polity's own immediate `memberOf`, one level, read off whichever of
+ * its rows records one first. A polity can carry more than one distinct
+ * non-null `memberOf` across its own rows (its membership genuinely changed
+ * over time -- 35 such polities exist against the real dist/, e.g. the
+ * Angevin Empire's components moving between England and France); this map
+ * is not year-aware and keeps whichever is encountered first, which is
+ * consistent with the rest of this module already treating `colourFor` as a
+ * single atemporal fact per polity rather than one that varies by year. Only
+ * the rare case of an aggregate that is *itself* a member of a further
+ * aggregate (two against the real dist/: Kingdom of Bohemia -> Holy Roman
+ * Empire, Kingdom of Poland -> Polish-Lithuania Kingdom, both unambiguous --
+ * each has exactly one distinct non-null `memberOf` of its own) makes this
+ * map's one-level shape matter at all; every ordinary member is looked up by
+ * its own row's `memberOf` directly and never consults this map.
+ */
+export function buildAggregateParents(versions: VersionsArtifact): ReadonlyMap<string, string> {
+  const parentOf = new Map<string, string>();
+  for (const row of versions.rows) {
+    if (row.memberOf === null) continue;
+    if (!parentOf.has(row.polityId)) parentOf.set(row.polityId, row.memberOf);
+  }
+  return parentOf;
+}
+
+/**
+ * Walks `parentOf` from `id` to the root: the first polity in the chain with
+ * no recorded `memberOf` of its own. Resolving only one level (the bug this
+ * closes) put a nested aggregate's own drawn colour, and its members' drawn
+ * colour, on two different graph nodes that the proximity graph then
+ * actively forces apart -- e.g. Kingdom of Bohemia's own polygon (a member of
+ * the Holy Roman Empire) drawing in the Empire's colour while its four member
+ * duchies drew in Bohemia's own colour, splitting one empire into two colours
+ * inside a single boundary stroke.
+ *
+ * `seen` guards against a cycle in malformed data (A member of B member of A):
+ * without it, a cycle would loop forever instead of failing closed. On
+ * detecting one, this stops and returns the last node reached rather than
+ * continuing around the loop -- the same "skip rather than invent" discipline
+ * `buildPolityIndex` applies to an unindexed id. Not expected against real
+ * data (decision 0017 resolves `memberOf` through the same identity strategy
+ * as `polityId`, so a chain can only cycle if the source data itself is
+ * circular) but this must not assume that stays true forever.
+ */
+export function resolveAggregateRoot(id: string, parentOf: ReadonlyMap<string, string>): string {
+  let current = id;
+  const seen = new Set<string>([current]);
+  for (;;) {
+    const parent = parentOf.get(current);
+    if (parent === undefined) return current;
+    if (seen.has(parent)) return current;
+    seen.add(parent);
+    current = parent;
+  }
+}
+
 /** One version's drawn identity, year interval and bounding box, for the proximity sweep. */
 interface ProximityRecord {
   readonly drawnId: string;
@@ -303,12 +359,15 @@ interface ProximityRecord {
 }
 
 /**
- * Adjacency by spatial proximity: two *drawn identities* (`memberOf ??
- * polityId` -- colour is assigned to the aggregate a member renders as, per
- * decision 0019's merged fill, so two members of the same empire must never
- * be forced apart by this graph even though their boxes overlap) are
- * adjacent if, in some year both have a live version, those versions'
- * bounding boxes overlap in both axes (`bboxesOverlap`).
+ * Adjacency by spatial proximity: two *drawn identities* (`memberOf`,
+ * resolved transitively to its root aggregate via `resolveAggregateRoot` --
+ * decision 0019's merged fill draws a member as its root aggregate's colour,
+ * not just its immediate `memberOf`'s, so two members of the same empire, or
+ * a nested aggregate and its own members, must never be forced apart by this
+ * graph even though their boxes overlap -- or `polityId` when a version is
+ * not currently a member of anything) are adjacent if, in some year both have
+ * a live version, those versions' bounding boxes overlap in both axes
+ * (`bboxesOverlap`).
  *
  * This is the second half of the fix for the owner's report: "I think we
  * should not have the same color on different polities that are touching or
@@ -336,13 +395,16 @@ interface ProximityRecord {
  * overlap at all. Measured against the real dist/: ~50ms total, see the
  * report this shipped with.
  */
-function buildProximityGraph(versions: VersionsArtifact): Map<string, Set<string>> {
+function buildProximityGraph(
+  versions: VersionsArtifact,
+  parentOf: ReadonlyMap<string, string>,
+): Map<string, Set<string>> {
   const records: ProximityRecord[] = [];
   for (const row of versions.rows) {
     const bbox = versions.geometry[row.id]?.bbox;
     if (!bbox) continue;
     records.push({
-      drawnId: row.memberOf ?? row.polityId,
+      drawnId: row.memberOf !== null ? resolveAggregateRoot(row.memberOf, parentOf) : row.polityId,
       fromYear: row.fromYear,
       toYear: row.toYear,
       bbox,
@@ -532,7 +594,8 @@ export function buildPalette(versions: VersionsArtifact): Palette {
   }
 
   const covisibility = buildCovisibilityGraph(candidateIds, candidateIntervals);
-  const proximity = buildProximityGraph(versions);
+  const parentOf = buildAggregateParents(versions);
+  const proximity = buildProximityGraph(versions, parentOf);
 
   // Union the two adjacency graphs: colour is assigned against whichever
   // guarantee -- no two co-visible sprawling empires share a colour, no two

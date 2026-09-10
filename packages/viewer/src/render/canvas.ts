@@ -1,6 +1,6 @@
 import type { LandArtifact, Polygon, VersionsArtifact } from "@history/model";
 import type { Frame } from "../engine/frame";
-import { buildPalette, type Palette } from "./palette";
+import { buildAggregateParents, buildPalette, type Palette, resolveAggregateRoot } from "./palette";
 import { buildPolityIndex, type PolityIndexEntry } from "./polity-index";
 import { colourForDraw, type RenderMode } from "./render-mode";
 import { fitWorld, toScreen, type Viewport } from "./transform";
@@ -74,8 +74,16 @@ export class MapRenderer {
   private readonly polityOf: Map<string, PolityIndexEntry>;
   private readonly areaOf = new Map<string, number>();
   private readonly knownPolityIds: ReadonlySet<string>;
-  /** Polity ids named by at least one version's memberOf -- see draw(). */
+  /**
+   * Root aggregate polity ids -- every version's memberOf, resolved
+   * transitively to its root (`resolveAggregateRoot`, palette.ts) -- so a
+   * nested aggregate that is itself a member (Kingdom of Bohemia -> Holy
+   * Roman Empire) contributes its root, not itself, keeping this set
+   * consistent with the root-resolved colour every member of that group
+   * shares. See draw().
+   */
   private readonly aggregateIds: ReadonlySet<string>;
+  private readonly aggregateParents: ReadonlyMap<string, string>;
   private readonly palette: Palette;
   private landPath: Path2D | null = null;
 
@@ -89,12 +97,15 @@ export class MapRenderer {
     this.ctx = ctx;
     this.polityOf = buildPolityIndex(versions);
     this.palette = buildPalette(versions);
+    this.aggregateParents = buildAggregateParents(versions);
     const knownPolityIds = new Set<string>();
     const aggregateIds = new Set<string>();
     for (const r of versions.rows) {
       this.areaOf.set(r.id, r.area);
       knownPolityIds.add(r.polityId);
-      if (r.memberOf !== null) aggregateIds.add(r.memberOf);
+      if (r.memberOf !== null) {
+        aggregateIds.add(resolveAggregateRoot(r.memberOf, this.aggregateParents));
+      }
     }
     this.knownPolityIds = knownPolityIds;
     this.aggregateIds = aggregateIds;
@@ -144,7 +155,13 @@ export class MapRenderer {
       const entry = this.polityOf.get(d.versionId);
       if (entry === undefined) continue;
       ctx.globalAlpha = d.alpha;
-      ctx.fillStyle = colourForDraw(entry, this.mode, this.palette, this.knownPolityIds);
+      ctx.fillStyle = colourForDraw(
+        entry,
+        this.mode,
+        this.palette,
+        this.knownPolityIds,
+        this.aggregateParents,
+      );
       ctx.fill(path);
       // Same globalAlpha as the fill, so the outline fades with the version
       // rather than persisting as a solid line after the shape has faded out.

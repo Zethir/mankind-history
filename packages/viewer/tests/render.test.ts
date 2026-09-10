@@ -2,7 +2,7 @@ import type { PolitiesArtifact, Version, VersionGeometry, VersionsArtifact } fro
 import { COORD_SCALE, equalEarth, WORLD_HALF_HEIGHT, WORLD_HALF_WIDTH } from "@history/model";
 import { readArtifact } from "@history/model/artifact";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildPalette } from "../src/render/palette";
+import { buildAggregateParents, buildPalette } from "../src/render/palette";
 import { buildPolityIndex } from "../src/render/polity-index";
 import { colourForDraw } from "../src/render/render-mode";
 import { fitWorld, fromScreen, toScreen } from "../src/render/transform";
@@ -530,6 +530,7 @@ describe("palette: member overlap does not fragment the proximity graph (synthet
     const palette = buildPalette(artifact);
     const index = buildPolityIndex(artifact);
     const knownPolityIds = new Set(artifact.rows.map((r) => r.polityId));
+    const aggregateParents = buildAggregateParents(artifact);
     const xEntry = index.get(`${memberXId}@1900`);
     const yEntry = index.get(`${memberYId}@1900`);
     expect(xEntry).toBeDefined();
@@ -539,12 +540,14 @@ describe("palette: member overlap does not fragment the proximity graph (synthet
       "on",
       palette,
       knownPolityIds,
+      aggregateParents,
     );
     const yColour = colourForDraw(
       yEntry as NonNullable<typeof yEntry>,
       "on",
       palette,
       knownPolityIds,
+      aggregateParents,
     );
     expect(xColour).toBe(palette.colourFor(aggregateId));
     expect(yColour).toBe(palette.colourFor(aggregateId));
@@ -615,9 +618,16 @@ describe("colourForDraw: merged mode (synthetic artifact, real palette)", () => 
     const palette = buildPalette(artifact);
     const index = buildPolityIndex(artifact);
     const knownPolityIds = new Set(artifact.rows.map((r) => r.polityId));
+    const aggregateParents = buildAggregateParents(artifact);
     const entry = index.get(`${memberId}@1900`);
     expect(entry).toBeDefined();
-    const colour = colourForDraw(entry as NonNullable<typeof entry>, "on", palette, knownPolityIds);
+    const colour = colourForDraw(
+      entry as NonNullable<typeof entry>,
+      "on",
+      palette,
+      knownPolityIds,
+      aggregateParents,
+    );
     expect(colour).toBe(palette.colourFor(aggregateId));
   });
 
@@ -631,9 +641,16 @@ describe("colourForDraw: merged mode (synthetic artifact, real palette)", () => 
     const palette = buildPalette(artifact);
     const index = buildPolityIndex(artifact);
     const knownPolityIds = new Set(artifact.rows.map((r) => r.polityId));
+    const aggregateParents = buildAggregateParents(artifact);
     const entry = index.get(`${soloId}@1900`);
     expect(entry).toBeDefined();
-    const colour = colourForDraw(entry as NonNullable<typeof entry>, "on", palette, knownPolityIds);
+    const colour = colourForDraw(
+      entry as NonNullable<typeof entry>,
+      "on",
+      palette,
+      knownPolityIds,
+      aggregateParents,
+    );
     expect(colour).toBe(palette.colourFor(soloId));
   });
 
@@ -651,12 +668,25 @@ describe("colourForDraw: merged mode (synthetic artifact, real palette)", () => 
     const palette = buildPalette(artifact);
     const index = buildPolityIndex(artifact);
     const knownPolityIds = new Set(artifact.rows.map((r) => r.polityId));
+    const aggregateParents = buildAggregateParents(artifact);
     const entry = index.get(`${danglingId}@1900`);
     expect(entry).toBeDefined();
     expect(() =>
-      colourForDraw(entry as NonNullable<typeof entry>, "on", palette, knownPolityIds),
+      colourForDraw(
+        entry as NonNullable<typeof entry>,
+        "on",
+        palette,
+        knownPolityIds,
+        aggregateParents,
+      ),
     ).not.toThrow();
-    const colour = colourForDraw(entry as NonNullable<typeof entry>, "on", palette, knownPolityIds);
+    const colour = colourForDraw(
+      entry as NonNullable<typeof entry>,
+      "on",
+      palette,
+      knownPolityIds,
+      aggregateParents,
+    );
     expect(colour).toBe(palette.colourFor(danglingId));
   });
 });

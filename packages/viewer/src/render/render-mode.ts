@@ -1,4 +1,5 @@
 import type { Palette } from "./palette";
+import { resolveAggregateRoot } from "./palette";
 import type { PolityIndexEntry } from "./polity-index";
 
 /**
@@ -12,7 +13,14 @@ import type { PolityIndexEntry } from "./polity-index";
  *
  * - "off": every polity, aggregate or member, renders its own `colourFor`
  *   colour, with no merging and no empire boundary. This is the pre-change
- *   baseline, kept so the owner can still compare against it.
+ *   baseline, kept so the owner can still compare against it. Note this means
+ *   the proximity graph's no-collision guarantee (palette.ts,
+ *   `buildProximityGraph`) does not hold here: that graph's edges are keyed
+ *   by each version's *root-resolved drawn identity* (a member's aggregate,
+ *   not the member itself), so a member's own unconstrained `colourFor`
+ *   result -- what "off" mode actually draws -- can still collide with a
+ *   touching neighbour. Acceptable for a comparison baseline, but worth
+ *   stating since it is not the guarantee "on" mode makes.
  * - "on": a component is filled with its aggregate's colour (`colourFor
  *   (memberOf)`), so the whole group reads as one flat colour, and every live
  *   aggregate additionally gets its boundary stroked over the top (canvas.ts)
@@ -37,12 +45,22 @@ export type RenderMode = "off" | "on";
  * member's own polity id (via `colourFor`) is the same "skip rather than
  * invent" discipline `buildPolityIndex` already applies to an unindexed
  * version id.
+ *
+ * `aggregateParents` resolves a known member's immediate `memberOf` to its
+ * *root* aggregate (`resolveAggregateRoot`, palette.ts) before looking up a
+ * colour, because `memberOf` nests: an aggregate can itself be a member of a
+ * further aggregate (Kingdom of Bohemia -> Holy Roman Empire, Kingdom of
+ * Poland -> Polish-Lithuania Kingdom, against the real dist/). Resolving only
+ * one level would draw the nested aggregate's own polygon in its parent's
+ * colour while its members draw in the nested aggregate's colour -- one
+ * empire reading as two.
  */
 export function colourForDraw(
   entry: PolityIndexEntry,
   mode: RenderMode,
   palette: Palette,
   knownPolityIds: ReadonlySet<string>,
+  aggregateParents: ReadonlyMap<string, string>,
 ): string {
   if (mode === "off") {
     return palette.colourFor(entry.polityId);
@@ -51,5 +69,6 @@ export function colourForDraw(
   if (!isKnownMember) {
     return palette.colourFor(entry.polityId);
   }
-  return palette.colourFor(entry.memberOf as string);
+  const root = resolveAggregateRoot(entry.memberOf as string, aggregateParents);
+  return palette.colourFor(root);
 }

@@ -248,13 +248,22 @@ touched.
 
 ## Consequences
 
-- `Palette` gains `colourForMember(aggregatePolityId, memberPolityId)`
-  alongside `colourFor`. `colourFor` alone cannot express declination, since
-  membership is a per-version fact (decision 0017: "a polity can be
-  independent in one stretch and a member of an aggregate in another"), not
-  a per-polity one -- `colourForDraw` (render-mode.ts) already receives the
-  specific version's `memberOf` and is the one place that routes to the
-  right method.
+- `Palette` gains no method for declination now, contrary to what this
+  bullet originally said (`colourForMember(aggregatePolityId,
+  memberPolityId)`, added here to express membership as a per-version fact
+  rather than a per-polity one). That method was built for declination and
+  later deleted along with declination by decision 0019
+  ("`Palette.colourForMember` is deleted... `Palette` is
+  `{ colourFor(id): string }` again"); this record was never updated to
+  say so, leaving it asserting a method the shipped code does not have.
+  What actually ships: `Palette` exposes only `colourFor(polityId):
+  string`, and a member's *drawn* colour is not this module's concern at
+  all -- `colourForDraw` (`render-mode.ts`) is the one place membership
+  and render mode meet. In `"on"` mode it resolves a member's `memberOf`
+  to its root aggregate via `resolveAggregateRoot` (palette.ts, walking
+  the chain so a nested aggregate such as Kingdom of Bohemia resolves to
+  the Holy Roman Empire rather than stopping one level up) and calls
+  `palette.colourFor` on that root, not the member's own id.
 - `fixtures/dist` has zero rows with a non-null `memberOf`, so nothing about
   declination is exercised by the real-fixture golden-vector test. A
   synthetic artifact (`render.test.ts`, "palette: declination") is the only
@@ -272,3 +281,22 @@ touched.
 - This has not been judged by a human watching the map, same as every
   palette decision before it. The owner is still comparing render modes;
   this is the palette they will be looking at while doing so.
+- **Known limitation: candidate identification is one level, resolution is
+  transitive, and the gap between them wastes a colour slot.**
+  `buildPalette` builds its co-visibility candidate set from every polity
+  directly named by another version's `memberOf` -- every *immediate*
+  aggregate -- not from `resolveAggregateRoot`. A nested aggregate such as
+  `(Kingdom of Bohemia)`, itself a member of `(Holy Roman Empire)`, is
+  therefore its own graph-colouring candidate, competing for and holding a
+  colour slot distinct from its root's. That slot is never actually
+  painted: both `colourForDraw` (render-mode.ts) and `MapRenderer`'s own
+  `aggregateIds` (canvas.ts) root-resolve through `resolveAggregateRoot`
+  before drawing, so Bohemia always renders in the Holy Roman Empire's
+  colour, never its own. Not a visible defect -- no two co-visible or
+  proximate candidates share a colour regardless of this, and the real
+  dist/ still lands at 40 of 40 colours used with zero overflow -- but the
+  colour budget is the one resource this whole design turns on (see the
+  module comment on `FAMILIES` in palette.ts: growing it was measured and
+  rejected), and every nested aggregate spends one colour that display
+  never uses. Left as a documentation note, not a code change, for the
+  next person to touch the colour budget to find.

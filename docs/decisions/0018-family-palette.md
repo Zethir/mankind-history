@@ -66,11 +66,21 @@ overwhelming on a screen covered edge-to-edge in polygons; muting it is what
 makes it usable at map scale rather than poster scale.
 
 Measured minimum CIE76 deltaE: 11.9 across families, 15.3 within a family.
-The palette this replaces measured 16.0 (its saturated tier, 40 colours) and
-9.9 (its muted tier, 36 colours) -- so the new tier-2-equivalent population
-(everyone hash-assigned into this one space) is *better* separated than
-before, and the new tier-1-equivalent population is somewhat less separated
-in exchange for the period-authentic hue restriction. Both remain well above
+**The 11.9 figure was wrong**, discovered later: the selection script's
+candidate pool excluded same-shade cross-family pairs by mistake, so it
+never actually measured the near-duplicate pair it had picked -- family 3
+(hue 40, saturation 55%) against family 4 (hue 45, saturation 50%) measure
+deltaE 3.33 at matching shades, the true worst case for the hue/saturation
+pairs this record shipped, close enough that it put Carthage and the Roman
+Republic in visually identical sand on the real map. The hue/saturation
+pairs shipped since fix that near-duplicate and measure a true all-pairs
+minimum of 10.46 -- see `FAMILIES` in palette.ts and decision 0016's
+Addendum. The palette this replaces measured 16.0 (its saturated tier, 40
+colours) and 9.9 (its muted tier, 36 colours) -- so the new tier-2-equivalent
+population (everyone hash-assigned into this one space) is *better*
+separated than before, and the new tier-1-equivalent population is somewhat
+less separated in exchange for the period-authentic hue restriction. Both
+remain well above
 the originally shipped single-tier palette's 8.29.
 
 ### One shared colour space, not two

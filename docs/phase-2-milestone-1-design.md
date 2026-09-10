@@ -339,16 +339,26 @@ condition.
 unrelated polities sharing a colour read as one invading the other. The first
 fix tried, seeding hue from each polity's longitude rank instead of a hash of
 its id, measurably made this worse: same-colour polities went from 15.8%
-overlapping in longitude on screen to 65.9%. The palette actually shipped is a
-two-tier design -- 40 graph-coloured saturated colours reserved for the 136
-polities whose territory itself sprawls, coloured against each other by
-year co-visibility widened by the renderer's own crossfade margin (so two
-visible empires never share a colour, including through a crossfade from one
-into the other), and a muted 36-colour hash-assigned palette for everyone
-else, the two told apart by saturation. See decision 0016 for the failed
-geographic-hue attempt, the crossfade-margin correction, and the full
-measurements behind what shipped. Still not itself judged by a human watching
-the map.
+overlapping in longitude on screen to 65.9%. The palette shipped at the time
+of this update is a two-tier design -- 40 graph-coloured saturated colours
+reserved for the 136 polities whose territory itself sprawls, coloured
+against each other by year co-visibility widened by the renderer's own
+crossfade margin (so two visible empires never share a colour, including
+through a crossfade from one into the other), and a muted 36-colour
+hash-assigned palette for everyone else, the two told apart by saturation.
+See decision 0016 for the failed geographic-hue attempt, the crossfade-margin
+correction, and the full measurements behind what shipped. Still not itself
+judged by a human watching the map.
+
+**Historical note, added later:** the two-tier design above was current only
+as of this update. It was superseded by decision 0018 (a 1970s family
+palette, one shared 40-colour space instead of two saturation tiers) and then
+by decision 0019 (members take their aggregate's exact colour under a merged
+fill with a boundary outline, not a shade of their own), which is what ships
+now. This section is left as it was written, as a record of what was true at
+the time, rather than rewritten to match the current design -- see
+`docs/architecture.md`'s `palette.ts` section and decisions 0016, 0018 and
+0019 for the current state.
 
 ## Chrome
 

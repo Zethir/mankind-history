@@ -21,6 +21,8 @@ interface Polity {
 interface Version {
   id: string;                // `${polityId}@${fromYear}` - unique, enforced at build time
   polityId: string;
+  memberOf: string | null;    // aggregate polity this version belonged to, from Cliopatria's
+                               // MemberOf, resolved like polityId (decision 0011) - decision 0017
   fromYear: number;          // integer, negative for BCE
   toYear: number;
   area: number;               // km^2, from Cliopatria's equal-area computed Area
@@ -31,6 +33,13 @@ interface Version {
   source: { dataset: "cliopatria"; version: string };
 }
 ```
+
+`memberOf` is the source's own stated imperial/dynastic relationship (e.g.
+French Africa's `MemberOf` names the French Third Republic); a later rename
+does not dangle it, because it is resolved through the same identity
+strategy as `polityId`. Its addition is why `SCHEMA_VERSION` (`canon.ts`) is
+now `2` - `1` was the Phase 1/Milestone 1 contract, with no membership
+field.
 
 `prevId`, `delta` and `gap` don't exist in the upstream data - Cliopatria
 stores each version independently, with no link between one row and the row

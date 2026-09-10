@@ -87,10 +87,24 @@ own polygon, not any component's, covers the ground.
 Verified against the real dist/: the 1929 French colonial group -- French
 Africa, French Indochina, French Mandate for Syria and Lebanon, French
 Third Republic, and the aggregate `(French Third Republic)` itself -- all
-five resolve to the identical colour, `hsl(60 34% 42%)`. (This is one shade
+five resolve to the identical colour, `hsl(48 62% 58%)`. (This is one shade
 per empire now, not decision 0018's four cycling shades -- merging
 collapses the whole group to whatever single colour the aggregate itself
 earned in the graph.)
+
+Nested aggregates resolve to their root, not just their immediate parent.
+Two real aggregates are themselves members of a further aggregate --
+Kingdom of Bohemia of the Holy Roman Empire, Kingdom of Poland of the
+Polish-Lithuania Kingdom -- and resolving `memberOf` only one level put a
+nested aggregate's own drawn colour, and its own members' drawn colour, on
+two different graph nodes that the proximity graph then actively forced
+apart: Kingdom of Bohemia's own polygon drew in the Holy Roman Empire's
+colour while its four member duchies drew in Bohemia's own colour,
+splitting one empire into two colours inside a single boundary stroke.
+`resolveAggregateRoot` (palette.ts) walks the `memberOf` chain to the first
+polity with no `memberOf` of its own before assigning the merged fill, so a
+nested aggregate and every one of its members, at any depth, resolve to the
+identical colour.
 
 ### The empire boundary
 
@@ -149,6 +163,9 @@ than an experiment being evaluated. The chrome's control is relabelled
   bite: temporarily changing `FAMILIES[0]`'s hue from 0 to 5 fails it,
   naming the same four fixture polities decision 0018's own verification
   named, and restoring it returns to green.
-- Decision 0018's palette measurements (10 families, 4 shades, minimum
-  deltaE 11.9 across families) are untouched by this record and still hold;
-  only its declination mechanism and its three-mode surface are superseded.
+- Decision 0018's palette itself (10 families, 4 shades) is untouched by
+  this record; only its declination mechanism and its three-mode surface
+  are superseded. Decision 0018's minimum deltaE figure of 11.9 across
+  families was later found wrong -- see that decision's correction and
+  decision 0016's Addendum -- the true measured minimum across the 40
+  colours currently shipped is 10.46.

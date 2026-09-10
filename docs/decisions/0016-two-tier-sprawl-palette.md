@@ -313,11 +313,18 @@ record already built for making that loud rather than silent -- see
 **Expanding the palette was measured and rejected, not overlooked.** This
 record's own "What the data says the actual problem is" section already
 established that colour count does not fix a density problem: 40 colours
-give a minimum cross-family CIE76 deltaE of 11.9; pushing to 72 collapses
+give a true all-pairs minimum CIE76 deltaE of 10.46; pushing to 72 collapses
 that to 6.0 with 22 confusable pairs, because past roughly 40 colours people
 stop being able to tell colours apart regardless of how they are assigned.
-That finding holds exactly as much for "touching neighbours" as it did for
-the original sprawling-empire failure mode. A future reader tempted to fix a
+(This paragraph originally reported 11.9 here, with zero confusable pairs
+claimed at 40 -- that number came from a selection script whose candidate
+pool excluded same-shade cross-family pairs by mistake, which is exactly
+what let a near-duplicate pair ship undetected: {hue: 40, saturation: 55%}
+against {hue: 45, saturation: 50%} measures deltaE 3.33 at matching shades,
+close enough to put two real polities in visually identical colour. See the
+corrected comment on `FAMILIES` in palette.ts.) That finding holds exactly
+as much for "touching neighbours" as it did for the original
+sprawling-empire failure mode. A future reader tempted to fix a
 neighbouring-colour complaint by growing `FAMILIES` should re-read this
 paragraph first: the fix is spending the *existing* 40 colours against a
 graph that knows about space, not manufacturing more colours nobody could

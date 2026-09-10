@@ -6,6 +6,7 @@ import {
   buildAggregateParents,
   buildPalette,
   FAMILIES,
+  resolveAggregateRoot,
   SHADE_LIGHTNESS,
 } from "../src/render/palette";
 import { buildPolityIndex } from "../src/render/polity-index";
@@ -377,6 +378,107 @@ describe("palette: colour distinctness (CIE76)", () => {
 });
 
 /**
+ * Finding 2: `memberOf` nests. `(Kingdom of Bohemia)` is an aggregate and a
+ * member of `(Holy Roman Empire)`; `(Kingdom of Poland)` is an aggregate and
+ * a member of `(Polish-Lithuania Kingdom)`, against the real dist/ -- both
+ * unambiguous, single-parent cases. `fixtures/dist` has zero rows with a
+ * non-null `memberOf` at all (see the merged-mode comment above), so this
+ * synthetic three-level chain -- member -> mid-aggregate -> root -- run
+ * through the *real* `buildPalette`, `buildAggregateParents` and
+ * `colourForDraw` together is the only place transitive resolution is
+ * checked end to end. Resolving only one level (the bug this closes) would
+ * give the mid-aggregate's own colour to itself and the root's colour to the
+ * member (or vice versa), splitting one group into two colours.
+ */
+function buildNestedAggregateArtifact(): {
+  artifact: VersionsArtifact;
+  rootId: string;
+  midId: string;
+  memberId: string;
+} {
+  const coordScale = 100_000;
+  const rows: Version[] = [];
+  const geometry: Record<string, VersionGeometry> = {};
+  const smallBbox = makeGeometry(bboxSpanningDegrees(5, coordScale));
+
+  const rootId = "name:(Nested Root Empire)";
+  rows.push(makeVersion(`${rootId}@1900`, rootId, 1900, 1950));
+  geometry[`${rootId}@1900`] = smallBbox;
+
+  const midId = "name:(Nested Mid Aggregate)";
+  rows.push(makeVersion(`${midId}@1900`, midId, 1900, 1950, rootId));
+  geometry[`${midId}@1900`] = smallBbox;
+
+  const memberId = "name:Nested Leaf Member";
+  rows.push(makeVersion(`${memberId}@1900`, memberId, 1900, 1950, midId));
+  geometry[`${memberId}@1900`] = smallBbox;
+
+  return {
+    artifact: { schemaVersion: 2, level: "coarse", coordScale, rows, geometry },
+    rootId,
+    midId,
+    memberId,
+  };
+}
+
+describe("palette: transitive memberOf resolution (synthetic artifact)", () => {
+  it("resolves a three-level chain to the root's colour for every level", () => {
+    const { artifact, rootId, midId, memberId } = buildNestedAggregateArtifact();
+    const palette = buildPalette(artifact);
+    const index = buildPolityIndex(artifact);
+    const knownPolityIds = new Set(artifact.rows.map((r) => r.polityId));
+    const aggregateParents = buildAggregateParents(artifact);
+
+    const rootEntry = index.get(`${rootId}@1900`);
+    const midEntry = index.get(`${midId}@1900`);
+    const memberEntry = index.get(`${memberId}@1900`);
+    expect(rootEntry).toBeDefined();
+    expect(midEntry).toBeDefined();
+    expect(memberEntry).toBeDefined();
+
+    const rootColour = colourForDraw(
+      rootEntry as NonNullable<typeof rootEntry>,
+      "on",
+      palette,
+      knownPolityIds,
+      aggregateParents,
+    );
+    const midColour = colourForDraw(
+      midEntry as NonNullable<typeof midEntry>,
+      "on",
+      palette,
+      knownPolityIds,
+      aggregateParents,
+    );
+    const memberColour = colourForDraw(
+      memberEntry as NonNullable<typeof memberEntry>,
+      "on",
+      palette,
+      knownPolityIds,
+      aggregateParents,
+    );
+
+    expect(rootColour).toBe(palette.colourFor(rootId));
+    expect(midColour).toBe(palette.colourFor(rootId));
+    expect(memberColour).toBe(palette.colourFor(rootId));
+  });
+
+  // The cycle guard: malformed data (A member of B member of A) must not
+  // loop forever. `resolveAggregateRoot` stops as soon as it would revisit a
+  // node and returns wherever it had reached, rather than hanging -- this
+  // pins that it terminates and returns one of the cycle's own members
+  // (never an unrelated id or a crash).
+  it("terminates on a cyclic memberOf chain instead of looping forever", () => {
+    const parents = new Map([
+      ["name:A", "name:B"],
+      ["name:B", "name:A"],
+    ]);
+    const result = resolveAggregateRoot("name:A", parents);
+    expect(["name:A", "name:B"]).toContain(result);
+  });
+});
+
+/**
  * A version whose bounding box spans exactly `spanDeg` degrees of longitude at
  * the equator, per `lonSpanDegrees` in palette.ts (both corners unprojected at
  * the same latitude). The equator is the simplest case to construct by
@@ -461,7 +563,7 @@ function buildSyntheticArtifact(): VersionsArtifact {
   rows.push(makeVersion(compactVersionId, COMPACT_ID, 1900, 1950));
   geometry[compactVersionId] = makeGeometry(bboxSpanningDegrees(5, coordScale));
 
-  return { schemaVersion: 1, level: "coarse", coordScale, rows, geometry };
+  return { schemaVersion: 2, level: "coarse", coordScale, rows, geometry };
 }
 
 describe("palette: sprawl guarantee (synthetic artifact)", () => {
@@ -541,7 +643,7 @@ function buildProximityArtifact(): VersionsArtifact {
   rows.push(makeVersion(`${NEIGHBOUR_B_ID}@1900`, NEIGHBOUR_B_ID, 1900, 1950));
   geometry[`${NEIGHBOUR_B_ID}@1900`] = sharedBbox;
 
-  return { schemaVersion: 1, level: "coarse", coordScale, rows, geometry };
+  return { schemaVersion: 2, level: "coarse", coordScale, rows, geometry };
 }
 
 describe("palette: proximity guarantee (synthetic artifact)", () => {
@@ -668,11 +770,11 @@ describe("palette: member overlap does not fragment the proximity graph (synthet
     const palette = buildPalette(artifact);
     const index = buildPolityIndex(artifact);
     const knownPolityIds = new Set(artifact.rows.map((r) => r.polityId));
-    const aggregateParents = buildAggregateParents(artifact);
     const xEntry = index.get(`${memberXId}@1900`);
     const yEntry = index.get(`${memberYId}@1900`);
     expect(xEntry).toBeDefined();
     expect(yEntry).toBeDefined();
+    const aggregateParents = buildAggregateParents(artifact);
     const xColour = colourForDraw(
       xEntry as NonNullable<typeof xEntry>,
       "on",
@@ -848,7 +950,7 @@ function buildOverflowArtifact(): VersionsArtifact {
     rows.push(makeVersion(versionId, polityId, 1900, 1950));
     geometry[versionId] = makeGeometry(bboxSpanningDegrees(60, coordScale));
   }
-  return { schemaVersion: 1, level: "coarse", coordScale, rows, geometry };
+  return { schemaVersion: 2, level: "coarse", coordScale, rows, geometry };
 }
 
 describe("palette: colour-reservation overflow", () => {

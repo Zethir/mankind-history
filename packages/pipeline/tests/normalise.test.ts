@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   normaliseCliopatria,
   normaliseLand,
+  toMemberOf,
   toWikidata,
   toWikipedia,
   toYear,
@@ -61,6 +62,27 @@ describe("toWikipedia", () => {
   });
   it("returns null when empty", () => {
     expect(toWikipedia("  ")).toBeNull();
+  });
+});
+
+describe("toMemberOf", () => {
+  // Real values from the pinned Cliopatria release: French Africa's own
+  // MemberOf field, 1871-1939 (see docs/decisions/0017).
+  it("passes through a single upstream Name", () => {
+    expect(toMemberOf("(French Third Republic)")).toBe("(French Third Republic)");
+  });
+
+  it("coerces an empty string to null, the same as any other missing field", () => {
+    expect(toMemberOf("")).toBeNull();
+    expect(toMemberOf(null)).toBeNull();
+  });
+
+  it("keeps only the first name of a semicolon-separated chain", () => {
+    // Real value: Kingdom of the Franks, 718-723 CE, is a member of both the
+    // Carolingian Empire and its own aggregate wrapper. The first name is the
+    // one that actually groups multiple sibling polities -- see the function
+    // doc and docs/decisions/0017.
+    expect(toMemberOf("(Carolingian Empire);(Kingdom of the Franks)")).toBe("(Carolingian Empire)");
   });
 });
 
@@ -150,6 +172,18 @@ describe("normaliseCliopatria", () => {
       wikipedia: "Roman_Empire",
       seshat: "12",
     });
+  });
+
+  it("carries MemberOf through as memberOf, coercing empty to null, and counts it", () => {
+    // Real values from the pinned release: French Africa's own row and
+    // (French Third Republic)'s row, both 1926-1929.
+    const { rows, report } = normaliseCliopatria([
+      polity({ Name: "French Africa", MemberOf: "(French Third Republic)" }),
+      polity({ Name: "(French Third Republic)", MemberOf: "" }),
+    ]);
+    expect(rows[0]?.memberOf).toBe("(French Third Republic)");
+    expect(rows[1]?.memberOf).toBeNull();
+    expect(report.memberOf).toBe(1);
   });
 
   it("counts a discarded MultiPolygon part rather than losing it silently", () => {

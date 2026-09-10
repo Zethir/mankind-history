@@ -41,7 +41,7 @@ describe("build", () => {
       collection([
         feature({ Name: "Alpha", Wikidata: "Q1", FromYear: 0, ToYear: 100 }, 0, 0),
         feature({ Name: "Alpha", Wikidata: "Q1", FromYear: 150, ToYear: 200 }, 1, 1),
-        feature({ Name: "Beta", FromYear: -50, ToYear: 20 }, 20, 20),
+        feature({ Name: "Beta", MemberOf: "Alpha", FromYear: -50, ToYear: 20 }, 20, 20),
         {
           ...feature({ Name: "Rel", FromYear: 0, ToYear: 1 }, 5, 5),
           properties: { Type: "RELATION" },
@@ -71,6 +71,26 @@ describe("build", () => {
     const second = versions.rows.find((r) => r.id === "name:Alpha@150");
     expect(second?.prevId).toBe("name:Alpha@0");
     expect(second?.gap).toBe(50);
+
+    // Beta's MemberOf ("Alpha") resolves end to end through the real pipeline,
+    // not just through resolveMembership in isolation. See decision 0017.
+    const beta = versions.rows.find((r) => r.id === "name:Beta@-50");
+    expect(beta?.memberOf).toBe("name:Alpha");
+    expect(second?.memberOf).toBeNull();
+    expect(report.membership).toEqual({ withMemberOf: 1, distinctAggregates: 1 });
+  });
+
+  it("fails the build on a MemberOf name that dangles, end to end", async () => {
+    writeFileSync(
+      join(sourcesDir, "cliopatria_polities_only.geojson"),
+      collection([
+        feature({ Name: "Orphan", MemberOf: "No Such Polity", FromYear: 0, ToYear: 10 }, 40, 40),
+        feature({ Name: "Filler", FromYear: 0, ToYear: 10 }, 60, 60),
+      ]),
+    );
+    await expect(build({ sourcesDir, outDir, aliases: [], overlaps: [] })).rejects.toThrow(
+      /No Such Polity/,
+    );
   });
 
   it("attaches geometry to every version it emits", async () => {

@@ -87,6 +87,10 @@ async function runBuild(): Promise<void> {
     `  Identity conflicts (first non-null kept, later value discarded): ` +
       `${c.wikidata} wikidata, ${c.wikipedia} wikipedia, ${c.seshat} seshat.`,
   );
+  console.log(
+    `  Membership: ${report.membership.withMemberOf} versions carry a memberOf, ` +
+      `${report.membership.distinctAggregates} distinct aggregate polities referenced.`,
+  );
   console.log(`  Antimeridian: ${report.polygonsCut} version polygons cut.`);
   console.log(
     `  Antimeridian (land): ${report.landPolygonsCut.coarse} coarse, ` +

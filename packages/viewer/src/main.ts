@@ -29,7 +29,7 @@ async function start(): Promise<void> {
     // replaced, so an escaped throw leaves a blank page instead of the error
     // state below.
     renderer = new MapRenderer(canvas, artifacts.versions, artifacts.land);
-    chrome = new Chrome(chromeRoot, engine);
+    chrome = new Chrome(chromeRoot, engine, renderer);
   } catch (error) {
     const message = document.createElement("p");
     message.className = "error";

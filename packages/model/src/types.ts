@@ -26,6 +26,14 @@ export interface Version {
   /** `${polityId}@${fromYear}`. Unique -- enforced by an acceptance criterion. */
   id: string;
   polityId: string;
+  /**
+   * Polity id of the aggregate this version belonged to, or null. From
+   * Cliopatria's `MemberOf` -- the source's own stated imperial/dynastic
+   * relationship (e.g. French Africa's `MemberOf` names the French Third
+   * Republic), resolved through the same identity strategy as `polityId`
+   * (decision 0011) so a later rename does not dangle. See decision 0017.
+   */
+  memberOf: string | null;
   /** Integer, negative for BCE. */
   fromYear: number;
   toYear: number;

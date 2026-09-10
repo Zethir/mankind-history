@@ -80,10 +80,28 @@ guessed:
   `PX_PER_UNIT` constants in `packages/model/src/canon.ts`, which were a
   guess made before any viewport existed.
 
-Neither figure says anything about whether the playback feel or the 16-hue
-palette hold up at that density - a human has not yet watched the map run
-against the real dataset, and that judgement is Milestone 1's exit
-condition, not something this document can assert on its behalf.
+Neither figure says anything about whether the playback feel or the palette
+hold up at that density. The original 16-hue palette was watched and reported
+broken; a geographic-hue replacement was tried and measured to be worse, not
+better (decision 0016); a two-tier palette (sprawling empires graph-coloured
+at higher saturation, everyone else hash-assigned at lower saturation)
+replaced both, and was itself superseded by a 1970s family palette (decision
+0018): 10 hue families x 4 lightness shades, one shared 40-colour space
+instead of two saturation tiers. Colour is assigned by graph colouring
+against the union of two kinds of adjacency: co-visibility (two candidates
+coexist in time, widened by the renderer's own crossfade margin) and spatial
+proximity (two drawn territories' bounding boxes overlap on screen in some
+year they are both live) -- the latter is what actually closes most real
+on-screen collisions, since most of them are between two ordinary compact
+neighbours, not empires. A member of an empire does not shade its own hue
+from the aggregate's family; it takes the aggregate's exact colour, resolved
+transitively to the root aggregate, so the whole empire reads as one merged
+fill under a boundary outline (decision 0019, which also records why an
+earlier attempt at shading members from one hue -- declination -- was tried
+and rejected as unreadable once two empires sit next to each other). None of
+these palettes has been judged by a human watching the map run against the
+real dataset, and that judgement is Milestone 1's exit condition, not
+something this document can assert on their behalf.
 
 ## The canonical model
 

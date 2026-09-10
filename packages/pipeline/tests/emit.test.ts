@@ -42,6 +42,7 @@ function input(outDir: string) {
       {
         id: "wd:Q1@0",
         polityId: "wd:Q1",
+        memberOf: null,
         fromYear: 0,
         toYear: 100,
         area: 5,

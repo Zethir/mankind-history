@@ -1,6 +1,20 @@
 import { SPEED_STEPS } from "../engine/constants";
 import type { Engine } from "../engine/engine";
 import type { Frame } from "../engine/frame";
+import type { MapRenderer } from "../render/canvas";
+import type { RenderMode } from "../render/render-mode";
+
+/**
+ * Labelled by effect, not mechanism, so the owner can pick a mode without
+ * reading render-mode.ts. "Off" is the pre-change baseline, kept only for
+ * comparison. "Merged" is the shipped behaviour: every component takes its
+ * aggregate's colour, with the empire's boundary stroked over the top --
+ * see docs/decisions/0019-merged-fill-with-boundary.md.
+ */
+const MODE_LABELS: Record<RenderMode, string> = {
+  off: "Off",
+  on: "Merged",
+};
 
 /**
  * Years are negative for BCE in the artifact contract. The readout is
@@ -18,12 +32,14 @@ export class Chrome {
   private readonly play: HTMLButtonElement;
   private readonly scrubber: HTMLInputElement;
   private readonly speeds = new Map<string, HTMLButtonElement>();
+  private readonly modes = new Map<RenderMode, HTMLButtonElement>();
   private scrubbing = false;
   private resumeAfterScrub = false;
 
   constructor(
     root: HTMLElement,
     private readonly engine: Engine,
+    private readonly renderer: MapRenderer,
   ) {
     const [lo, hi] = engine.range;
     root.innerHTML = `
@@ -36,6 +52,12 @@ export class Chrome {
           ${SPEED_STEPS.map((n) => `<button type="button" data-speed="${n}">${n}x</button>`).join(
             "",
           )}
+        </span>
+        <span class="modes">
+          <span class="modes-label">Empires:</span>
+          ${(Object.keys(MODE_LABELS) as RenderMode[])
+            .map((m) => `<button type="button" data-mode="${m}">${MODE_LABELS[m]}</button>`)
+            .join("")}
         </span>
       </div>
       <p class="note">
@@ -105,6 +127,14 @@ export class Chrome {
         else engine.clock.setUserSpeed(Number(value));
       });
     }
+
+    for (const button of root.querySelectorAll<HTMLButtonElement>("[data-mode]")) {
+      const value = button.dataset.mode as RenderMode;
+      this.modes.set(value, button);
+      button.addEventListener("click", () => {
+        renderer.mode = value;
+      });
+    }
   }
 
   /**
@@ -118,6 +148,9 @@ export class Chrome {
     const active = frame.mode === "auto" ? "auto" : String(this.engine.clock.userSpeed);
     for (const [value, button] of this.speeds) {
       button.classList.toggle("on", value === active);
+    }
+    for (const [value, button] of this.modes) {
+      button.classList.toggle("on", value === this.renderer.mode);
     }
   }
 }

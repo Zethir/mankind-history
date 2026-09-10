@@ -29,6 +29,15 @@ export function deriveLineage(
   rowPolityIds: string[],
   whitelist: OverlapWhitelistEntry[],
   sourceVersion: string,
+  /**
+   * Positionally aligned with `rows`, from `resolveMembership` (decision
+   * 0017). Required, not defaulted: a defaulted-to-empty array let a caller
+   * that forgot to wire membership through produce `memberOf: null` on every
+   * version with a build that still passed -- a silent loss of decision
+   * 0017's data, not a loud failure. Every call site must say explicitly what
+   * membership it means, `[]` included.
+   */
+  rowMemberOfIds: Array<string | null>,
 ): LineageResult {
   const groups = new Map<string, number[]>();
   for (let i = 0; i < rows.length; i++) {
@@ -63,6 +72,7 @@ export function deriveLineage(
       const version: Version = {
         id,
         polityId,
+        memberOf: rowMemberOfIds[index] ?? null,
         fromYear: source.fromYear,
         toYear: source.toYear,
         area: source.area,

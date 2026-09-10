@@ -5,7 +5,12 @@ import { SOURCES, type SourceSpec, sourcePath } from "./sources";
 import { cutPolygons } from "./stages/antimeridian";
 import { buildChangeIndex } from "./stages/change-index";
 import { emit } from "./stages/emit";
-import { type AliasEntry, assignIdentity, type IdentityConflicts } from "./stages/identity";
+import {
+  type AliasEntry,
+  assignIdentity,
+  type IdentityConflicts,
+  resolveMembership,
+} from "./stages/identity";
 import { deriveLineage, type OverlapWhitelistEntry } from "./stages/lineage";
 import {
   type NormalisedRow,
@@ -31,6 +36,8 @@ export interface BuildReport {
   versions: number;
   overlaps: number;
   identityConflicts: IdentityConflicts;
+  /** See decision 0017. Dangling MemberOf references fail the build instead of appearing here. */
+  membership: { withMemberOf: number; distinctAggregates: number };
   polygonsCut: number;
   /** Antimeridian cuts on the land layers, counted separately from version cuts. */
   landPolygonsCut: { coarse: number; mid: number };
@@ -72,11 +79,14 @@ export async function build(options: BuildOptions): Promise<BuildReport> {
     readCollection(sourcePath(cliopatria, options.sourcesDir)),
   );
   const { polities, rowPolityIds, conflicts } = assignIdentity(rows, options.aliases);
+  const polityIds = new Set(polities.map((p) => p.id));
+  const membership = resolveMembership(rows, options.aliases, polityIds);
   const { versions, overlaps, rowIndexById } = deriveLineage(
     rows,
     rowPolityIds,
     options.overlaps,
     cliopatria.upstreamVersion,
+    membership.rowMemberOfIds,
   );
 
   const geometry: Record<string, VersionGeometry> = {};
@@ -170,6 +180,10 @@ export async function build(options: BuildOptions): Promise<BuildReport> {
     versions: versions.length,
     overlaps: overlaps.length,
     identityConflicts: conflicts,
+    membership: {
+      withMemberOf: membership.withMemberOf,
+      distinctAggregates: membership.distinctAggregates,
+    },
     polygonsCut,
     landPolygonsCut: { coarse: cutCoarseLand.cut, mid: cutMidLand.cut },
     landPolygons: { coarse: coarse.length, mid: mid.length },

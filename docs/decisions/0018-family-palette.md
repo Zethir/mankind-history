@@ -39,16 +39,16 @@ total:
 
 | Family | Hue | Saturation |
 |---|---|---|
-| 0 | 0 | 50% |
-| 1 | 22 | 30% |
-| 2 | 25 | 50% |
-| 3 | 40 | 55% |
-| 4 | 45 | 50% |
-| 5 | 60 | 34% |
-| 6 | 90 | 34% |
-| 7 | 150 | 26% |
-| 8 | 180 | 26% |
-| 9 | 200 | 26% |
+| 0 | 5 | 58% |
+| 1 | 30 | 62% |
+| 2 | 48 | 62% |
+| 3 | 68 | 32% |
+| 4 | 95 | 42% |
+| 5 | 135 | 28% |
+| 6 | 168 | 32% |
+| 7 | 195 | 38% |
+| 8 | 220 | 34% |
+| 9 | 330 | 22% |
 
 Shade ladder, lightness: `[74, 58, 42, 28]`.
 
@@ -65,23 +65,45 @@ print) because a continent-sized fill of 100%-saturation burnt orange is
 overwhelming on a screen covered edge-to-edge in polygons; muting it is what
 makes it usable at map scale rather than poster scale.
 
-Measured minimum CIE76 deltaE: 11.9 across families, 15.3 within a family.
-**The 11.9 figure was wrong**, discovered later: the selection script's
-candidate pool excluded same-shade cross-family pairs by mistake, so it
-never actually measured the near-duplicate pair it had picked -- family 3
-(hue 40, saturation 55%) against family 4 (hue 45, saturation 50%) measure
-deltaE 3.33 at matching shades, the true worst case for the hue/saturation
-pairs this record shipped, close enough that it put Carthage and the Roman
-Republic in visually identical sand on the real map. The hue/saturation
-pairs shipped since fix that near-duplicate and measure a true all-pairs
-minimum of 10.46 -- see `FAMILIES` in palette.ts and decision 0016's
-Addendum. The palette this replaces measured 16.0 (its saturated tier, 40
+Measured minimum CIE76 deltaE: 10.46, all-pairs across the 40 shipped
+colours -- every one of the 40 against every other, including same-shade
+pairs across families. That is not the number this record originally
+shipped with, and the story of what changed is the reusable part.
+
+**The original selection was wrong, and confidently so.** The script that
+chose the ten families built its candidate pool keyed by hue and
+saturation with duplicate keys, so several saturations per hue collapsed
+onto one lookup entry and its greedy search ended up comparing colours
+other than the ones it actually selected. It reported 11.9 across families
+with zero confusable pairs. The families it actually shipped -- hue 40 at
+55% saturation alongside hue 45 at 50% saturation -- measure deltaE 3.33 at
+matching shades: `hsl(40 55% 74%)` against `hsl(45 50% 74%)`, near-identical
+sand. On the real map this put Carthage and the Roman Republic in visually
+the same colour -- exactly the kind of collision this palette exists to
+prevent, shipped undetected because the figure asserted in this record's
+prose was never checked against the constants that actually shipped.
+
+**The fix, and the guard against it recurring.** The families in the table
+above were reselected with unique candidate keys and re-measured all-pairs,
+*including same-shade cross-family pairs* -- the comparison the original
+selection's bug had silently excluded, and the one that would have caught
+it. There is now a regression test (`render.test.ts`, "palette: colour
+distinctness (CIE76)") asserting the minimum pairwise CIE76 over the
+shipped `FAMILIES`/`SHADE_LIGHTNESS` constants stays at or above 10.0,
+all-pairs; it also sanity-checks its own colour-space conversion against
+two independently known reference values (white, and pure red's known Lab
+coordinates) before trusting itself to grade the real palette, because a
+silently wrong conversion inside the test would be exactly this defect
+again, just moved. The lesson generalises past this one bug: a
+distinctness figure asserted only in prose is worth less than one a test
+enforces every run.
+
+The palette this replaces measured 16.0 (its saturated tier, 40
 colours) and 9.9 (its muted tier, 36 colours) -- so the new tier-2-equivalent
 population (everyone hash-assigned into this one space) is *better*
 separated than before, and the new tier-1-equivalent population is somewhat
 less separated in exchange for the period-authentic hue restriction. Both
-remain well above
-the originally shipped single-tier palette's 8.29.
+remain well above the originally shipped single-tier palette's 8.29.
 
 ### One shared colour space, not two
 
@@ -157,6 +179,16 @@ family match to its own empire is worth more, on the map, than its
 mismatch from an unrelated empire it happens to share a screen with.
 
 ### Verified against the real dist/ (schema 2, 13,380 versions)
+
+The measurements below, including the two `hsl(...)` and family citations
+naming specific hues, are as originally recorded: against the original
+`FAMILIES` values (corrected above) and the declination mechanism this
+record shipped (removed by decision 0019). They are not re-stated against
+the corrected table, because both the values and declination itself are
+superseded -- re-deriving them here would misrepresent what was actually
+measured at the time. Current colour-distinctness verification is the
+regression test described above; current merged-fill behaviour is
+decision 0019.
 
 - Candidates in the shared co-visibility graph: 42 aggregates + 112
   independently-sprawling non-aggregate polities = 154, margin-widened at

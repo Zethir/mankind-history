@@ -15,11 +15,20 @@ const artifact = (level: string): VersionsArtifact =>
 function registry() {
   const requested: string[] = [];
   const resolvers = new Map<string, (v: VersionsArtifact) => void>();
+  const rejecters = new Map<string, (e: Error) => void>();
   const r = new LevelRegistry((level: DetailLevel) => {
     requested.push(level);
-    return new Promise<VersionsArtifact>((resolve) => resolvers.set(level, resolve));
+    return new Promise<VersionsArtifact>((resolve, reject) => {
+      resolvers.set(level, resolve);
+      rejecters.set(level, reject);
+    });
   });
-  return { r, requested, settle: (l: string) => resolvers.get(l)?.(artifact(l)) };
+  return {
+    r,
+    requested,
+    settle: (l: string) => resolvers.get(l)?.(artifact(l)),
+    fail: (l: string) => rejecters.get(l)?.(new Error("network")),
+  };
 }
 
 describe("prefetch policy", () => {
@@ -44,6 +53,22 @@ describe("prefetch policy", () => {
     settle("mid");
     await Promise.resolve();
     await Promise.resolve();
+    expect(requested).toContain("full");
+  });
+
+  // Full has no dependency on mid's *data*, only on being requested after
+  // it (so the two fetches do not compete for bandwidth). Catches a
+  // regression where `request("full")` is called only from mid's success
+  // branch: a transient network error on mid would then permanently cap
+  // that session at coarse, since nothing else in the class ever requests
+  // full.
+  it("requests full even when mid's fetch fails", async () => {
+    const { r, requested, fail } = registry();
+    r.onFirstPaint();
+    fail("mid");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(r.stateOf("mid")).toBe("failed");
     expect(requested).toContain("full");
   });
 
@@ -79,8 +104,16 @@ describe("bestAvailable", () => {
   // No `wanted` argument: bestAvailable(registry) is always the finest
   // resident level -- there is no ceiling to fall back under, because
   // detail only ever improves and there is no downgrade.
-  it("starts at coarse, since coarse is resident from construction", () => {
+  //
+  // Pins the seeding invariant directly (stateOf, not bestAvailable's
+  // fallthrough): bestAvailable falls through to "coarse" whenever nothing
+  // at all is resident, so an assertion on bestAvailable alone would still
+  // pass if the constructor never seeded coarse as resident. Verified by
+  // mutation: deleting `coarse.state = "resident"` in levels.ts's
+  // constructor turns this assertion red (see task-7-report.md).
+  it("seeds coarse as resident from construction, before any request", () => {
     const { r } = registry();
+    expect(r.stateOf("coarse")).toBe("resident");
     expect(bestAvailable(r)).toBe("coarse");
   });
 
@@ -104,7 +137,10 @@ describe("bestAvailable", () => {
     settle("full");
     await Promise.resolve();
     expect(bestAvailable(r)).toBe("full");
-    r.request("mid");
+    // Re-request full itself, not mid: a no-op since full is resident, but
+    // it exercises the entry `bestAvailable` actually reads, rather than an
+    // unrelated one.
+    r.request("full");
     expect(bestAvailable(r)).toBe("full");
   });
 });

@@ -14,8 +14,12 @@ interface Entry {
  * Tracks how much of each detail level has loaded and drives the
  * progressive-upgrade prefetch chain: coarse is resident from construction
  * (main.ts already loaded it before this exists), mid is requested after
- * first paint, and full is requested once mid becomes resident. There is no
- * downgrade and no "wanted" level -- detail only ever improves, so
+ * first paint, and full is requested once mid's fetch *settles* -- whether
+ * mid succeeds or fails. Full has no dependency on mid's data, only on being
+ * requested after it so the two do not compete for bandwidth; making full
+ * conditional on mid succeeding would let one transient network error
+ * permanently cap a session at coarse, which is the opposite of "detail only
+ * ever improves". There is no downgrade and no "wanted" level, so
  * `bestAvailable` is just the finest resident level.
  *
  * The fetcher is injected so this policy is unit-testable under
@@ -54,16 +58,22 @@ export class LevelRegistry {
     const entry = this.entries.get(level) as Entry;
     if (entry.state !== "absent") return;
     entry.state = "loading";
-    this.fetcher(level).then(
-      (artifact) => {
-        entry.state = "resident";
-        entry.artifact = artifact;
+    this.fetcher(level)
+      .then(
+        (artifact) => {
+          entry.state = "resident";
+          entry.artifact = artifact;
+        },
+        () => {
+          entry.state = "failed";
+        },
+      )
+      .finally(() => {
+        // Ordering only, not a data dependency: full is requested once mid's
+        // fetch settles either way, so a failed mid does not permanently cap
+        // the session at coarse.
         if (level === "mid") this.request("full");
-      },
-      () => {
-        entry.state = "failed";
-      },
-    );
+      });
   }
 
   onFirstPaint(): void {

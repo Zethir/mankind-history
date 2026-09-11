@@ -106,14 +106,59 @@ owner was shown this and chose it knowingly; see Decisions below.
    across two milestones.
 2. **Progressive loading.** The coarser level keeps drawing while a finer one
    fetches, swapping in silently on arrival. Never blocked, never blank.
-3. **Playback stays viewport-scoped and 0006 is not amended.** No cap on
+3. **Mid is prefetched, full is earned.** Mid starts after first paint at low
+   priority; full waits until the user has zoomed once. See "Prefetching".
+4. **Playback stays viewport-scoped and 0006 is not amended.** No cap on
    acceleration; 0006's logarithmic dead time stands. The asymmetry is the
    intent: you should not wait on Europe while looking at the Pacific, and it
    makes the dataset's uneven coverage legible rather than hidden.
-4. **Thresholds come from measurement.** Each level's threshold is the scale at
+5. **Thresholds come from measurement.** Each level's threshold is the scale at
    which that level's p99 displacement crosses one screen pixel.
-5. **Artifacts load whole and stay resident.** No chunking, no eviction of
+6. **Artifacts load whole and stay resident.** No chunking, no eviction of
    parsed artifacts.
+
+## Prefetching
+
+On-demand loading alone means the first zoom always shows stretched coarse
+geometry for a second or two before sharpening. Preloading everything removes
+that but blocks the first paint behind 19.4 MB. Deferring the prefetch until
+after first paint gets both: the first paint still costs only coarse's 2.89 MB,
+and the rest arrives while the map is already playing.
+
+The three levels do not deserve equal eagerness:
+
+| level | size | who needs it |
+|---|---|---|
+| coarse | 2.89 MB | everyone, immediately |
+| mid | 4.47 MB | anyone who zooms at all |
+| full | 12.05 MB | only deep zoom |
+
+Full is 62% of the bytes and serves the rarest case. So:
+
+- **Coarse** loads and paints as it does today.
+- **Mid** starts immediately after first paint, at low priority. It covers the
+  first zoom step anyone takes, so the visible softening disappears for the
+  common path.
+- **Full** starts only once the user has actually zoomed once -- evidence they
+  are exploring rather than glancing.
+
+The common path therefore costs 7.36 MB rather than 19.4 MB.
+
+Two rules this depends on:
+
+- **The prefetch must not compete with anything the user triggered.** Issue it
+  with `fetch(url, { priority: "low" })` so the browser deprioritises it
+  against interaction-driven requests.
+- **Progressive rendering remains the fallback, not a legacy path.** Prefetch
+  is an optimisation and can lose: on a slow connection a user will out-zoom
+  the download. The coarser-level-keeps-drawing behaviour must catch that
+  case, and must be tested as the live path it is rather than treated as dead
+  code once prefetch works.
+
+The cost, stated plainly: every visitor now pays 4.47 MB and roughly 150 MB of
+heap whether they ever zoom or not. On desktop, which is this milestone's
+stated target, that is acceptable. It is the first thing to revisit if mobile
+comes into scope.
 
 ## The pipeline fix, which lands first
 
@@ -259,31 +304,39 @@ Named tests, run by `pnpm test` against `fixtures/dist`.
 7. Land selection saturates at mid and never requests a level the pipeline does
    not emit.
 
+**Prefetching**
+
+8. Mid is requested after first paint and not before it; full is not requested
+   until a zoom has occurred. Asserted against a recording of request order,
+   not by timing.
+9. A level already resident is never re-requested, however many times zoom
+   crosses its threshold.
+
 **Change index**
 
-8. `nextChangeAfter(year, bbox)` returns the smallest event year strictly
+10. `nextChangeAfter(year, bbox)` returns the smallest event year strictly
    greater than `year` among cells overlapping `bbox`, and null past the end.
-9. A bbox covering the whole world returns exactly the same sequence the
+11. A bbox covering the whole world returns exactly the same sequence the
    row-derived Milestone 1 implementation returns -- the two must agree where
    their domains overlap.
-10. `cellRangeFor` in the model maps a bbox to the same cells the pipeline used
+12. `cellRangeFor` in the model maps a bbox to the same cells the pipeline used
     when building the index.
 
 **Pipeline**
 
-11. `changes.json` buckets `fromYear` and `toYear + 1`; the artifact's distinct
+13. `changes.json` buckets `fromYear` and `toYear + 1`; the artifact's distinct
     year count over the full build is 509, not 937.
-12. The build stays deterministic and byte-identical across two runs.
+14. The build stays deterministic and byte-identical across two runs.
 
 **Checked in the full-build workflow, not the test suite**
 
-13. At each level's threshold scale, that level's p99 displacement is under one
+15. At each level's threshold scale, that level's p99 displacement is under one
     screen pixel. This needs the real dataset; the fixture's 620 shared arcs
     are too thin a slice to characterise a percentile.
 
 **Milestone exit condition, not a test**
 
-14. The project owner zooms into a dense region and a sparse one and judges
+16. The project owner zooms into a dense region and a sparse one and judges
     whether viewport-scoped acceleration reads as intended given the 91%
     concentration, and whether level switching is visible in a way that
     distracts.

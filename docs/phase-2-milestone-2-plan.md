@@ -329,7 +329,11 @@ Expected: FAIL — `cellRangeFor` is not exported from the model.
 
 Cut `cellRangeFor` and its `clamp` helper from `packages/pipeline/src/stages/change-index.ts` into `packages/model/src/grid.ts`, keeping the existing doc comment verbatim — it explains why the grid is a parameter, which is the non-obvious part. Export it from `packages/model/src/index.ts`. Have the pipeline import it from `@history/model`.
 
-- [ ] **Step 4: Verify and commit**
+- [ ] **Step 4: Note why acceptance criterion 12 needs no separate test**
+
+Criterion 12 asks that the model's `cellRangeFor` map a bbox to the same cells the pipeline used when building the index. Because this task **moves** the function rather than reimplementing it, the pipeline calls the very same code -- they agree by construction, not by coincidence. Say so in your report. If you find yourself copying rather than moving it, stop: two implementations will drift, and the criterion exists precisely because that would silently read the wrong cells.
+
+- [ ] **Step 5: Verify and commit**
 
 ```bash
 pnpm lint && pnpm typecheck && pnpm test

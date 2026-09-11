@@ -1,5 +1,6 @@
 import type { LandArtifact, PolitiesArtifact, VersionsArtifact } from "@history/model";
-import { SCHEMA_VERSION } from "@history/model";
+import { LEVEL_INDEX, SCHEMA_VERSION } from "@history/model";
+import type { DetailLevel } from "../render/level";
 
 /**
  * The three artifacts M1 needs. `changes.json` is deliberately absent: its
@@ -44,4 +45,22 @@ export async function fetchArtifacts(base = "."): Promise<Artifacts> {
     get<LandArtifact>("land.0.json"),
   ]);
   return validateArtifacts({ polities, versions, land });
+}
+
+/**
+ * Fetches one detail level's versions artifact for the progressive-upgrade
+ * prefetch chain (see `LevelRegistry` in `./levels.ts`). Deprioritised so a
+ * background prefetch cannot compete with anything the user actually
+ * triggered.
+ *
+ * `priority` is not in the DOM lib's `RequestInit` yet; the cast is
+ * deliberate.
+ */
+export async function fetchVersions(level: DetailLevel, base = "."): Promise<VersionsArtifact> {
+  const name = `versions.${LEVEL_INDEX[level]}.json`;
+  const res = await fetch(`${base}/${name}`, { priority: "low" } as RequestInit);
+  if (!res.ok) throw new Error(`${name}: ${res.status} ${res.statusText}`);
+  const artifact = (await res.json()) as VersionsArtifact;
+  assertSchema(name, artifact.schemaVersion);
+  return artifact;
 }

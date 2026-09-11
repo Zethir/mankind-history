@@ -61,10 +61,27 @@ export function fromScreen(
  * Clamps scale to [fit, fit * MAX_ZOOM_FACTOR] and keeps the centre inside the
  * world, so the map can never be pushed entirely off screen or zoomed out into
  * empty space around it.
+ *
+ * A canvas with zero width or height (real during the gap between mount and
+ * the browser's first layout pass -- `canvas.clientWidth`/`clientHeight` read
+ * 0 until then) makes `fitScale` return 0, which would otherwise divide the
+ * half-extents below by zero and hand every caller a NaN centre -- silently,
+ * since NaN propagates through the arithmetic in `toScreen` without ever
+ * throwing, rendering a blank map with no error to point at. Guarded on
+ * `scale` itself (what is actually about to be divided by), not on
+ * width/height, so this also catches a NaN/Infinity scale arriving from a
+ * caller that divided by an already-degenerate `v.scale` (`zoomAt` and
+ * `panBy` both do, before reaching here). The centre a degenerate canvas
+ * "should" have is not an obvious question -- there is no meaningful
+ * half-extent to centre within -- so this matches `fitWorld`'s own answer for
+ * every canvas size, degenerate or not: the world's origin.
  */
 function clamp(v: Viewport): Viewport {
   const min = fitScale(v.width, v.height);
   const scale = Math.min(Math.max(v.scale, min), min * MAX_ZOOM_FACTOR);
+  if (!(scale > 0)) {
+    return { width: v.width, height: v.height, scale, centreX: 0, centreY: 0 };
+  }
   // Half the visible extent, in projected units. When the view is wider than
   // the world there is nothing to clamp on that axis, so the centre pins to 0.
   const halfW = v.width / 2 / scale;

@@ -26,13 +26,17 @@ describe("zoomAt", () => {
   // centre whenever that axis has surplus, exactly the behaviour the brief's
   // own note requires for the width-bound axis at exact fit ("the pan limit
   // is zero and the centre pins to 0"). Applied to the height axis, that same
-  // rule locks centreY to 0 until the zoom closes the 0.4223-unit gap --
-  // factor >= ~1.32 -- so at factor 1.1 or 2 *no* off-centre vertical anchor
-  // can be honoured, and the canvas corners (screen y 0 and 899, whose
-  // unprojected y already exceeds WORLD_HALF_HEIGHT at fit) can never be
-  // honoured at *any* factor: as scale grows the achievable centreY approaches
-  // WORLD_HALF_HEIGHT in the limit, which is permanently short of what a
-  // corner anchor needs. This is a property of any implementation that also
+  // rule locks centreY to exactly 0 until the zoom closes the 0.4223-unit gap
+  // -- factor >= 341.55/258.62 ~= 1.321 -- so at factor 1.1 (below that
+  // threshold) *no* off-centre vertical anchor can be honoured. Factor 2 is
+  // just above the threshold, so centreY is no longer pinned to exactly 0
+  // there, but the achievable range is still only +-0.4473 (WORLD_HALF_HEIGHT
+  // minus the half-extent at that scale), too small for the anchors this test
+  // dropped. And the canvas corners (screen y 0 and 899, whose unprojected y
+  // already exceeds WORLD_HALF_HEIGHT at fit) can never be honoured at *any*
+  // factor: as scale grows the achievable centreY approaches WORLD_HALF_HEIGHT
+  // in the limit, which is permanently short of what a corner anchor needs.
+  // This is a property of any implementation that also
   // satisfies "never pushes the world entirely off screen" on this canvas --
   // confirmed by sweeping the original four anchors against the brief's exact
   // implementation (`packages/viewer/probe*.mjs`, run and discarded; see the
@@ -157,5 +161,33 @@ describe("fitWorld", () => {
     const v = fitWorld(1400, 900);
     expect(v.centreX).toBe(0);
     expect(v.centreY).toBe(0);
+  });
+});
+
+describe("degenerate canvas", () => {
+  // Before the browser's first layout pass, canvas.clientWidth/clientHeight
+  // read 0 (canvas.ts's constructor calls fitWorld with exactly these).
+  // fitScale(0, h) and fitScale(w, 0) both return 0, and clamp() divides by
+  // scale when computing half-extents -- unguarded, that division yields
+  // NaN, which propagates through every downstream toScreen call as a
+  // silently blank map, never a thrown error.
+  //
+  // A wrong value here is a NaN or Infinity centreX/centreY -- checked with
+  // toBe(0), not Number.isFinite(...): a guard that "fixes" NaN into some
+  // other wrong-but-finite number (for instance by leaking the pre-division
+  // Infinity through Math.min/Math.max unchanged) would pass an
+  // is-finite check but still fail this one.
+  it("keeps zoomAt's centre finite when width is zero", () => {
+    const v = zoomAt(fitWorld(0, 900), 2, 0, 450);
+    expect(v.centreX).toBe(0);
+    expect(v.centreY).toBe(0);
+    expect(Number.isFinite(v.scale)).toBe(true);
+  });
+
+  it("keeps panBy's centre finite when height is zero", () => {
+    const v = panBy(fitWorld(1400, 0), 100, 50);
+    expect(v.centreX).toBe(0);
+    expect(v.centreY).toBe(0);
+    expect(Number.isFinite(v.scale)).toBe(true);
   });
 });

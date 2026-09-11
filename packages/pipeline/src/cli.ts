@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ChangesArtifact } from "@history/model";
+import type { ChangesArtifact, LevelName } from "@history/model";
 import { readArtifact } from "@history/model/artifact";
 import { build, loadAliases, loadOverlaps } from "./build";
 import { fetchSource } from "./fetch/download";
@@ -9,6 +9,7 @@ import { SOURCES } from "./sources";
 import { type Level, measureDisplacement } from "./stages/displacement";
 import { selectFeatures } from "./stages/extract-fixture";
 import { analyse, type HistogramResult } from "./stages/histogram";
+import { measureSpacing, percentile } from "./stages/spacing";
 
 function flag(name: string): boolean {
   return process.argv.includes(`--${name}`);
@@ -253,12 +254,6 @@ function runHistogram(): void {
  */
 const FIT_TO_WINDOW_PX_PER_UNIT = 258.6;
 
-function percentile(sorted: number[], p: number): number {
-  if (sorted.length === 0) return 0;
-  const index = Math.min(sorted.length - 1, Math.floor(p * sorted.length));
-  return sorted[index] as number;
-}
-
 function runDisplacement(): void {
   const distDir = option("dist", "dist");
 
@@ -286,6 +281,24 @@ function runDisplacement(): void {
   console.log("");
 }
 
+function runSpacing(): void {
+  const distDir = option("dist", "dist");
+
+  for (const level of ["coarse", "mid", "full"] as const satisfies readonly LevelName[]) {
+    const { ringsConsidered, spacings } = measureSpacing(distDir, level);
+    const max = spacings.length > 0 ? (spacings[spacings.length - 1] as number) : 0;
+    const fmt = (units: number) =>
+      `${units.toFixed(6)} units / ${(units * FIT_TO_WINDOW_PX_PER_UNIT).toFixed(3)} px`;
+
+    console.log(`\n  ${level}: ${ringsConsidered} rings, ${spacings.length} segments`);
+    console.log(`    p50 ${fmt(percentile(spacings, 0.5))}`);
+    console.log(`    p90 ${fmt(percentile(spacings, 0.9))}`);
+    console.log(`    p99 ${fmt(percentile(spacings, 0.99))}`);
+    console.log(`    max ${fmt(max)}`);
+  }
+  console.log("");
+}
+
 const command = process.argv[2];
 if (command === "fetch") {
   await runFetch();
@@ -297,10 +310,12 @@ if (command === "fetch") {
   runHistogram();
 } else if (command === "displacement") {
   runDisplacement();
+} else if (command === "spacing") {
+  runSpacing();
 } else {
   console.error(
     `Unknown command "${command ?? ""}". ` +
-      "Known: fetch, build, extract-fixture, histogram, displacement",
+      "Known: fetch, build, extract-fixture, histogram, displacement, spacing",
   );
   process.exit(1);
 }

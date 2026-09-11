@@ -1,13 +1,28 @@
 import { WORLD_HALF_HEIGHT, WORLD_HALF_WIDTH } from "@history/model";
 
-/** A fitted view of the projected world. Milestone 1 has no pan or zoom. */
+/**
+ * A view of the projected world: where the centre of the canvas sits in
+ * projected units, and how many screen pixels one projected unit occupies.
+ *
+ * Milestone 1 could describe a viewport by its offsets because there was only
+ * ever one -- the whole world, centred. With zoom and pan the centre moves, so
+ * it is stored rather than derived.
+ */
 export interface Viewport {
   width: number;
   height: number;
   /** Screen pixels per projected unit. */
   scale: number;
-  offsetX: number;
-  offsetY: number;
+  /** Projected coordinates at the centre of the canvas. */
+  centreX: number;
+  centreY: number;
+}
+
+/** How far past fit-to-window zoom may go. Full detail is what makes this useful. */
+export const MAX_ZOOM_FACTOR = 64;
+
+export function fitScale(width: number, height: number): number {
+  return Math.min(width / (WORLD_HALF_WIDTH * 2), height / (WORLD_HALF_HEIGHT * 2));
 }
 
 /**
@@ -18,13 +33,15 @@ export interface Viewport {
  * PX_PER_UNIT only guessed at. Milestone 2 replaces those constants with it.
  */
 export function fitWorld(width: number, height: number): Viewport {
-  const scale = Math.min(width / (WORLD_HALF_WIDTH * 2), height / (WORLD_HALF_HEIGHT * 2));
-  return { width, height, scale, offsetX: width / 2, offsetY: height / 2 };
+  return { width, height, scale: fitScale(width, height), centreX: 0, centreY: 0 };
 }
 
 /** Scaled-integer projected coordinates to screen pixels. Y is flipped: north is up. */
 export function toScreen(v: Viewport, x: number, y: number, coordScale: number): [number, number] {
-  return [v.offsetX + (x / coordScale) * v.scale, v.offsetY - (y / coordScale) * v.scale];
+  return [
+    v.width / 2 + (x / coordScale - v.centreX) * v.scale,
+    v.height / 2 - (y / coordScale - v.centreY) * v.scale,
+  ];
 }
 
 /** The inverse of toScreen, in the same scaled-integer space. */
@@ -34,5 +51,62 @@ export function fromScreen(
   sy: number,
   coordScale: number,
 ): [number, number] {
-  return [((sx - v.offsetX) / v.scale) * coordScale, ((v.offsetY - sy) / v.scale) * coordScale];
+  return [
+    (v.centreX + (sx - v.width / 2) / v.scale) * coordScale,
+    (v.centreY - (sy - v.height / 2) / v.scale) * coordScale,
+  ];
+}
+
+/**
+ * Clamps scale to [fit, fit * MAX_ZOOM_FACTOR] and keeps the centre inside the
+ * world, so the map can never be pushed entirely off screen or zoomed out into
+ * empty space around it.
+ */
+function clamp(v: Viewport): Viewport {
+  const min = fitScale(v.width, v.height);
+  const scale = Math.min(Math.max(v.scale, min), min * MAX_ZOOM_FACTOR);
+  // Half the visible extent, in projected units. When the view is wider than
+  // the world there is nothing to clamp on that axis, so the centre pins to 0.
+  const halfW = v.width / 2 / scale;
+  const halfH = v.height / 2 / scale;
+  const limitX = Math.max(0, WORLD_HALF_WIDTH - halfW);
+  const limitY = Math.max(0, WORLD_HALF_HEIGHT - halfH);
+  return {
+    width: v.width,
+    height: v.height,
+    scale,
+    centreX: Math.min(Math.max(v.centreX, -limitX), limitX),
+    centreY: Math.min(Math.max(v.centreY, -limitY), limitY),
+  };
+}
+
+/**
+ * Zoom about a screen point, keeping the projected coordinate under that point
+ * fixed. Anchoring at the cursor is what makes zoom feel controlled; anchoring
+ * at the centre makes the map slide away from wherever you are looking.
+ */
+export function zoomAt(v: Viewport, factor: number, screenX: number, screenY: number): Viewport {
+  const min = fitScale(v.width, v.height);
+  const scale = Math.min(Math.max(v.scale * factor, min), min * MAX_ZOOM_FACTOR);
+  // The world point under the cursor, before and after, must agree.
+  const wx = v.centreX + (screenX - v.width / 2) / v.scale;
+  const wy = v.centreY - (screenY - v.height / 2) / v.scale;
+  return clamp({
+    width: v.width,
+    height: v.height,
+    scale,
+    centreX: wx - (screenX - v.width / 2) / scale,
+    centreY: wy + (screenY - v.height / 2) / scale,
+  });
+}
+
+/** Drag the map by a screen distance. */
+export function panBy(v: Viewport, dxScreen: number, dyScreen: number): Viewport {
+  return clamp({
+    width: v.width,
+    height: v.height,
+    scale: v.scale,
+    centreX: v.centreX - dxScreen / v.scale,
+    centreY: v.centreY + dyScreen / v.scale,
+  });
 }

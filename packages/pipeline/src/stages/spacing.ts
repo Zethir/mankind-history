@@ -21,6 +21,31 @@ import { readArtifact } from "@history/model/artifact";
  * level, the Euclidean distance between each pair of consecutive vertices,
  * in projected world units (COORD_SCALE.<level>-descaled, not screen pixels
  * -- pixel conversion depends on a viewport scale the caller chooses).
+ *
+ * **What this established (Task 6, against the real dist/, via `pnpm
+ * spacing`):** rendered segment length at fit scale --
+ *
+ *   coarse: p50 1.352px | p90 3.282px | p99 6.651px | max 89.395px
+ *   mid:    p50 1.193px | p90 2.863px | p99 6.003px | max 89.397px
+ *   full:   p50 1.003px | p90 2.612px | p99 5.686px | max 89.397px
+ *
+ * The three levels differ by at most 35% at any percentile, and their
+ * maxima are identical (the same genuinely-straight source border at every
+ * level, not a simplification artifact). Coarse keeps 30% of full's
+ * vertices yet its typical segment is only a third longer -- simplification
+ * is working as intended, but the consequence is that **the levels are a
+ * bandwidth difference, not a fidelity one.** A visible-jaggedness threshold
+ * a zoom level could cross does not exist in this data: there is no scale at
+ * which one level looks meaningfully worse than its neighbour.
+ *
+ * The project owner's conclusion: drop zoom-based level *switching*
+ * entirely. There is no threshold to switch on. The viewer instead loads
+ * coarse and paints it, then upgrades to mid and then full as they arrive,
+ * strictly one-directionally -- see `packages/viewer/src/render/level.ts`
+ * (`DetailLevel`, `landLevelFor`) and docs/phase-2-milestone-2-design.md,
+ * "Thresholds: what the measurement actually showed". This measurement
+ * stays in the repo because it is the evidence for that decision, not
+ * because a threshold still needs it.
  */
 
 const LEVEL_FILE: Record<LevelName, string> = {

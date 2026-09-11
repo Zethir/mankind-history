@@ -1,6 +1,6 @@
 # Phase 2, Milestone 2 — implementation design
 
-Zoom, level switching, and viewport-scoped playback.
+Zoom, progressive detail upgrade, and viewport-scoped playback.
 
 Milestone 1 shipped a map that plays the whole world at coarse detail. This
 milestone adds the dimension it deliberately left out: getting closer. That
@@ -16,9 +16,10 @@ replaced.
 In:
 
 - Zoom and pan, with the viewport applied as a canvas transform (0002).
-- Level switching across coarse, mid and full, with on-demand loading.
+- Progressive detail upgrade across coarse, mid and full, with on-demand
+  loading. Not zoom-based switching -- see "Thresholds: what the measurement
+  actually showed" for why that idea was dropped.
 - Viewport-scoped `nextVisibleChange` (0006).
-- Real level-switch thresholds, measured rather than guessed.
 - The `changes.json` off-by-one fix in the pipeline, which everything above
   depends on.
 
@@ -224,8 +225,13 @@ owner was shown this and chose it knowingly; see Decisions below.
    acceleration; 0006's logarithmic dead time stands. The asymmetry is the
    intent: you should not wait on Europe while looking at the Pacific, and it
    makes the dataset's uneven coverage legible rather than hidden.
-5. **Thresholds come from measurement.** Each level's threshold is the scale at
-   which that level's p99 displacement crosses one screen pixel.
+5. **No zoom-based switching; progressive upgrade instead.** Both border
+   displacement (Task 1) and retained-vertex spacing (Task 6) were measured
+   as candidate threshold bases and neither discriminates the levels enough
+   to justify a scale at which to switch -- spacing differs by at most 35% at
+   any percentile, with identical maxima. The levels are a bandwidth
+   difference, not a fidelity one. See "Thresholds: what the measurement
+   actually showed".
 6. **Artifacts load whole and stay resident.** No chunking, no eviction of
    parsed artifacts.
 
@@ -322,7 +328,7 @@ path set.
 
 So paths are built once in world space and the viewport is applied via
 `ctx.setTransform`. The cache then survives pan and zoom entirely and is
-rebuilt only on a level switch.
+rebuilt only on a level upgrade.
 
 Two consequences:
 
@@ -336,13 +342,16 @@ Two consequences:
   This must be stated in `canon.ts` itself, because a future reader will
   otherwise expect the renderer to use them.
 
-### Level switching
+### Level upgrade
 
-The level follows `viewport.scale` through the two measured thresholds.
+There is no threshold and no downgrade -- see "Thresholds: what the
+measurement actually showed" for why zoom-based switching was dropped. The
+level is whatever the most detailed *arrived* artifact is: coarse paints
+immediately, mid replaces it silently once its prefetch resolves, full once
+its own fetch (triggered by the first zoom -- see "Prefetching") resolves.
+Detail only ever improves; zoom changes what is visible, not which artifact
+is on screen.
 
-- **Hysteresis.** The switch up happens at the threshold; the switch back down
-  only below 0.8x it. On a bare threshold, nudging the wheel across the
-  boundary triggers a 12 MB fetch and nudging back triggers another.
 - **The path cache is per level, and only the active level's is kept.** Each
   level has its own `coordScale`, so a path built for coarse is meaningless for
   mid. Three resident caches over 13,380 versions would add materially to the
@@ -420,13 +429,58 @@ dropped point" has no removal-free answer. So a pixel-denominated *fidelity*
 threshold is not available from this data, and asserting one would break the
 project's core rule.
 
-**The thresholds therefore come from retained-vertex spacing.** Task 6 measures
-the typical spacing between retained vertices per level and sets each threshold
-where that spacing exceeds a few screen pixels -- the scale at which the
-straight segments simplification left behind become visible. The acceptance
-criterion follows: *at each level's threshold scale, retained-vertex spacing
-stays under N screen pixels*. That measures detail density rather than border
-error, which is what the data supports.
+**Task 6 tried retained-vertex spacing next, and it also failed to produce a
+usable threshold -- for a different, more final reason.** The idea: measure
+the typical spacing between retained vertices per level and set each
+threshold where that spacing exceeds a few screen pixels, the scale at which
+the straight segments simplification left behind become visible. Measured
+with `measureSpacing` (`packages/pipeline/src/stages/spacing.ts`) against the
+full pinned build via `pnpm spacing`, as rendered segment length at fit scale
+(258.6 px/unit):
+
+| level | segments | p50 | p90 | p99 | max |
+|---|---|---|---|---|---|
+| coarse | 2,331,183 | 1.352px | 3.282px | 6.651px | 89.395px |
+| mid | 2,745,581 | 1.193px | 2.863px | 6.003px | 89.397px |
+| full | 3,312,907 | 1.003px | 2.612px | 5.686px | 89.397px |
+
+Unlike displacement, this distribution is not degenerate -- every percentile
+moves monotonically, coarse > mid > full, and the numbers reconcile exactly
+against the vertex counts already measured (2,331,183 + 69,023 rings =
+2,400,206, the coarse vertex count quoted elsewhere in this document; the
+same check passes for mid). But the levels differ by **at most 35% at any
+percentile**, and their maxima are identical to four significant figures
+(89.395px vs 89.397px -- the same genuinely-straight source border at every
+level, not a simplification artifact). Coarse keeps 30% of full's vertices
+yet its typical segment is only a third longer: simplification is working
+exactly as intended.
+
+**The conclusion this forces: the three levels are a bandwidth difference,
+not a fidelity one.** There is no scale at which coarse looks meaningfully
+worse than mid, or mid than full -- a viewer at any zoom would need to be
+looking for a 30-something-percent difference in average facet length to
+notice it at all, and the levels exist to save bytes on the wire, not to hide
+visible simplification. Zoom-based level switching is therefore a subsystem
+built to manage a distinction that is barely visible: whatever scale a
+threshold picked, it would not correspond to a moment where detail visibly
+improves.
+
+**Decision: drop zoom-based level switching entirely, in favour of
+progressive upgrade.** Load coarse and paint it, prefetch mid and swap it in
+once it arrives, then full, and never go back down -- detail only ever
+improves, and it improves on its own schedule (see "Prefetching"), not on the
+viewport's scale. Zoom just zooms; it no longer decides which artifact is on
+screen. `selectLevel`, `LEVEL_THRESHOLDS` and `HYSTERESIS` (drafted for this
+design) are deleted along with their tests -- there is no threshold to select
+against and no downgrade to damp. `DetailLevel` and `landLevelFor` survive
+unchanged: Task 7 still needs to name the three levels, and land still
+saturates at mid because the pipeline emits no `land.2`, independent of how
+the political layer's level is chosen.
+
+The spacing measurement itself stays in the repository permanently, not as
+scaffolding removed with the mechanism it disproved: it is the evidence for
+this decision, and a future reader proposing zoom-based switching again
+should be pointed at this table before rebuilding it.
 
 ## Acceptance criteria
 
@@ -445,56 +499,74 @@ Named tests, run by `pnpm test` against `fixtures/dist`.
 
 **Level selection**
 
-5. Each threshold selects the level the measurement assigns to that scale.
-6. Hysteresis holds: crossing a threshold upward then returning slightly below
-   it does not switch back until 0.8x.
-7. Land selection saturates at mid and never requests a level the pipeline does
-   not emit.
+5. Land selection saturates at mid and never requests a level the pipeline does
+   not emit (`landLevelFor`).
+
+Criteria 5 and 6 as originally planned (each threshold selects the level a
+measurement assigns to that scale; hysteresis holds near a boundary) are
+dropped along with zoom-based switching -- see "Thresholds: what the
+measurement actually showed". There is no threshold and nothing to test.
 
 **Prefetching**
 
-8. Mid is requested after first paint and not before it; full is not requested
+6. Mid is requested after first paint and not before it; full is not requested
    until a zoom has occurred. Asserted against a recording of request order,
    not by timing.
-9. A level already resident is never re-requested, however many times zoom
-   crosses its threshold.
+7. A level already resident is never re-requested, however many times a fetch
+   for it is triggered.
 
 **Change index**
 
-10. `nextChangeAfter(year, bbox)` returns the smallest event year strictly
+8. `nextChangeAfter(year, bbox)` returns the smallest event year strictly
    greater than `year` among cells overlapping `bbox`, and null past the end.
-11. A bbox covering the whole world returns exactly the same sequence the
+9. A bbox covering the whole world returns exactly the same sequence the
    row-derived Milestone 1 implementation returns -- the two must agree where
    their domains overlap.
-12. `cellRangeFor` in the model maps a bbox to the same cells the pipeline used
+10. `cellRangeFor` in the model maps a bbox to the same cells the pipeline used
     when building the index.
 
 **Pipeline**
 
-13. `changes.json` buckets `fromYear` and `toYear + 1`; the artifact's distinct
+11. `changes.json` buckets `fromYear` and `toYear + 1`; the artifact's distinct
     year count over the full build is 509, not 937.
-14. The build stays deterministic and byte-identical across two runs.
+12. The build stays deterministic and byte-identical across two runs.
 
 **Checked in the full-build workflow, not the test suite**
 
-15. At each level's threshold scale, that level's p99 displacement is under one
-    screen pixel. This needs the real dataset; the fixture's 620 shared arcs
-    are too thin a slice to characterise a percentile.
+13. At each level's `PX_PER_UNIT` reference scale (`canon.ts`), that level's
+    p99 displacement is under one screen pixel. This needs the real dataset;
+    the fixture's 620 shared arcs are too thin a slice to characterise a
+    percentile. Reworded from "threshold scale" now that levels do not switch
+    on a threshold -- these are still the reference scales `canon.ts` names,
+    independent of how the viewer picks a level to draw.
 
 **Milestone exit condition, not a test**
 
-16. The project owner zooms into a dense region and a sparse one and judges
+14. The project owner zooms into a dense region and a sparse one and judges
     whether viewport-scoped acceleration reads as intended given the 91%
-    concentration, and whether level switching is visible in a way that
-    distracts.
+    concentration, and whether the coarse-to-full upgrade is visible in a way
+    that distracts.
 
 ## New decision records to author
 
 **Percentile displacement replaces the maximum.** Records that the maximum is
 the same seven arcs at coarse and mid, so it cannot discriminate; that the
 percentile does; and that the criterion is now measured at each level's own
-threshold scale. Without the measurement written down, a future reader will
-restore the max-based rule as the more obviously correct one.
+`PX_PER_UNIT` reference scale (`canon.ts`), not at a level-switch threshold --
+there is no threshold, levels no longer switch on scale. Without the
+measurement written down, a future reader will restore the max-based rule as
+the more obviously correct one.
+
+**Levels are a bandwidth difference, not a fidelity one; switching is
+dropped.** Records the retained-vertex-spacing measurement (Task 6) that
+killed zoom-based level switching after border displacement (Task 1) already
+had: spacing differs by at most 35% at any percentile between coarse, mid and
+full, with identical maxima, so no scale exists where one level looks visibly
+worse than the next. The viewer instead loads coarse, then progressively
+upgrades to mid and full as they arrive, never downgrading. Without this
+record, a future reader re-reads "level switching" in the scope list above
+and rebuilds the threshold-and-hysteresis mechanism this design tried twice
+and abandoned both times.
 
 **Artifacts load whole, and why chunking was rejected.** Records the payload
 and heap table, and that 331 MB resident is inside a desktop budget. The
@@ -510,16 +582,19 @@ because the engine had no reason to know about pixels; now it has a bounding
 box, and the shortest path from `render/` is to pass the viewport itself.
 Review should watch this specifically.
 
-**Realized: Task 1's measurement does not separate the levels.** The proxy was
-loose, and the real Hausdorff measurement shows coarse's and mid's p99 at
-0.002932 projected units each -- under 0.02% apart, the same seven world-space
-events already found at the maximum. See "Threshold viability check (Task 1,
-real measurement)" above. No thresholds are set; the project owner needs to
-choose one of the options recorded there before level switching's fidelity
-story can be finished. This blocks Decision 5 and item 15 of the acceptance
-criteria, and likely the decision record "Percentile displacement replaces the
-maximum" needs to be rewritten once a direction is chosen, not merely filed as
-planned.
+**Resolved: neither measurement separates the levels, and the owner chose to
+stop looking for a threshold rather than pick a third metric.** Task 1's real
+Hausdorff measurement showed coarse's and mid's p99 at 0.002932 projected
+units each -- under 0.02% apart, the same seven world-space events already
+found at the maximum. Task 6's retained-vertex-spacing measurement, tried as
+the replacement basis, discriminates the levels (unlike displacement) but
+only by up to 35% at any percentile, with identical maxima. See "Thresholds:
+what the measurement actually showed" above. The owner's conclusion: the
+levels are a bandwidth difference, not a fidelity one, so zoom-based
+switching is dropped in favour of progressive, one-directional upgrade. This
+resolved Decision 5 and item 5-6 of the original acceptance criteria (now
+removed); the decision record "Levels are a bandwidth difference, not a
+fidelity one; switching is dropped" records it.
 
 **331 MB is artifacts only.** Path2D objects, the proximity graph and the
 palette sit on top and are unmeasured. Unlikely to change the design, but the

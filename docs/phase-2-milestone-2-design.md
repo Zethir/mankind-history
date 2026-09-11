@@ -393,6 +393,41 @@ This amends a Phase 1 acceptance criterion and gets its own decision record,
 arguing against the max-based version explicitly rather than replacing it
 quietly.
 
+## Thresholds: what the measurement actually showed
+
+Task 1 measured border displacement per shared arc at both levels against the
+full build. The result killed the rule this design originally proposed:
+
+```
+coarse: 22,215 arcs | identical 21,058 (94.8%) | dropped 1,150 | displaced 7
+mid:    22,215 arcs | identical 21,508 (96.8%) | dropped   700 | displaced 7
+        p50 0.00159   p90/p95/p99/max 0.002932 at BOTH levels
+```
+
+p99 is **identical** at coarse and mid, not merely close. Simplification on
+this dataset does not move borders, it removes them: 94.8% of shared arcs come
+through byte-identical, and only seven are displaced at all -- the same seven
+events at both levels, so a seven-member distribution puts every percentile
+above p50 on the same index.
+
+The earlier proxy in this document appeared to show the percentile
+discriminating. It did not measure displacement; it measured endpoint drops.
+**The drop rate discriminates -- 1,150 against 700. Displacement does not.**
+
+Measuring how far a border moves where an arc was dropped is exactly what broke
+Phase 1's six failed formulations: "what surviving geometry is nearest this
+dropped point" has no removal-free answer. So a pixel-denominated *fidelity*
+threshold is not available from this data, and asserting one would break the
+project's core rule.
+
+**The thresholds therefore come from retained-vertex spacing.** Task 6 measures
+the typical spacing between retained vertices per level and sets each threshold
+where that spacing exceeds a few screen pixels -- the scale at which the
+straight segments simplification left behind become visible. The acceptance
+criterion follows: *at each level's threshold scale, retained-vertex spacing
+stays under N screen pixels*. That measures detail density rather than border
+error, which is what the data supports.
+
 ## Acceptance criteria
 
 Named tests, run by `pnpm test` against `fixtures/dist`.

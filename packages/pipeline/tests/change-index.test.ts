@@ -1,6 +1,7 @@
 import {
   type ChangesArtifact,
   COORD_SCALE,
+  cellRangeFor,
   GRID,
   type Version,
   type VersionGeometry,
@@ -8,7 +9,6 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   buildChangeIndex,
-  cellRangeFor,
   nextChangeAfter,
   nextChangeBruteForce,
   polygonBbox,

@@ -652,15 +652,19 @@ The sea fill must be drawn *before* this transform is set, or in a `save`/`resto
 
 - [ ] **Step 3: Keep stroke widths in screen pixels**
 
-`POLITY_OUTLINE_WIDTH` (0.75) and `AGGREGATE_OUTLINE_WIDTH` (1.5) are screen measurements. Under the transform they would scale with zoom, so divide:
+`POLITY_OUTLINE_WIDTH` (0.75) and `AGGREGATE_OUTLINE_WIDTH` (1.5) are screen measurements. Under the transform they would scale with zoom, so they must be converted into world units.
+
+The derivation, which you should check rather than take on trust: the transform makes one world unit equal `dpr * scale` device pixels, and a stroke of `W` CSS pixels is `W * dpr` device pixels. `lineWidth` is expressed in the current transform's units, so it is `W * dpr / (dpr * scale)` = **`W / scale`**. The `dpr` cancels.
 
 ```ts
-// Widths are screen pixels; the transform is in projected units, so undo it.
-// Without this, borders thicken as you zoom until the map is all outline.
-ctx.lineWidth = POLITY_OUTLINE_WIDTH / (dpr * v.scale) * dpr;
+// Widths are screen pixels but the transform is in projected units. One world
+// unit is dpr*scale device pixels and a W-pixel stroke is W*dpr device pixels,
+// so lineWidth is W/scale -- the dpr cancels. Without this, borders thicken as
+// you zoom until the map is all outline.
+ctx.lineWidth = POLITY_OUTLINE_WIDTH / v.scale;
 ```
 
-Work out the correct expression rather than copying this one blindly — it must produce a constant apparent width at every zoom level, and you should verify that by reasoning about the composed transform, not by eye.
+Confirm it by checking that doubling `scale` halves `lineWidth`, leaving the apparent width constant.
 
 - [ ] **Step 4: Add `setViewport`**
 

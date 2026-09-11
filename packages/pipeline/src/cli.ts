@@ -6,6 +6,7 @@ import { build, loadAliases, loadOverlaps } from "./build";
 import { fetchSource } from "./fetch/download";
 import { REGIONS, resolveEra, resolveRegion } from "./regions";
 import { SOURCES } from "./sources";
+import { type Level, measureDisplacement } from "./stages/displacement";
 import { selectFeatures } from "./stages/extract-fixture";
 import { analyse, type HistogramResult } from "./stages/histogram";
 
@@ -244,6 +245,47 @@ function runHistogram(): void {
   }
 }
 
+/**
+ * Fit-to-window scale measured for the Milestone 2 viewport, 1400x900 --
+ * see docs/phase-2-milestone-2-design.md. Not PX_PER_UNIT (canon.ts), which
+ * is a provisional per-level guess consumed by the acceptance criterion; this
+ * is the real figure the design doc's thresholds are set against.
+ */
+const FIT_TO_WINDOW_PX_PER_UNIT = 258.6;
+
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const index = Math.min(sorted.length - 1, Math.floor(p * sorted.length));
+  return sorted[index] as number;
+}
+
+function runDisplacement(): void {
+  const distDir = option("dist", "dist");
+
+  for (const level of ["coarse", "mid"] as const satisfies readonly Level[]) {
+    const { arcsConsidered, identical, droppedArcs, displacements } = measureDisplacement(
+      distDir,
+      level,
+    );
+    const displaced = displacements.length;
+    const max = displaced > 0 ? (displacements[displaced - 1] as number) : 0;
+    const fmt = (units: number) =>
+      `${units.toFixed(6)} units / ${(units * FIT_TO_WINDOW_PX_PER_UNIT).toFixed(3)} px`;
+
+    console.log(`\n  ${level}: ${arcsConsidered} shared arcs`);
+    console.log(
+      `    identical ${identical} (${((identical / arcsConsidered) * 100).toFixed(1)}%), ` +
+        `dropped ${droppedArcs}, displaced ${displaced}`,
+    );
+    console.log(`    p50 ${fmt(percentile(displacements, 0.5))}`);
+    console.log(`    p90 ${fmt(percentile(displacements, 0.9))}`);
+    console.log(`    p95 ${fmt(percentile(displacements, 0.95))}`);
+    console.log(`    p99 ${fmt(percentile(displacements, 0.99))}`);
+    console.log(`    max ${fmt(max)}`);
+  }
+  console.log("");
+}
+
 const command = process.argv[2];
 if (command === "fetch") {
   await runFetch();
@@ -253,9 +295,12 @@ if (command === "fetch") {
   runExtractFixture();
 } else if (command === "histogram") {
   runHistogram();
+} else if (command === "displacement") {
+  runDisplacement();
 } else {
   console.error(
-    `Unknown command "${command ?? ""}". Known: fetch, build, extract-fixture, histogram`,
+    `Unknown command "${command ?? ""}". ` +
+      "Known: fetch, build, extract-fixture, histogram, displacement",
   );
   process.exit(1);
 }

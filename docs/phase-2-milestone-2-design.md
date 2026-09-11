@@ -53,6 +53,52 @@ of magnitude the answer changes, and this measurement is the thing to re-take.
 Measured with `node --expose-gc`. A browser will differ, but not by an order of
 magnitude.
 
+### Path2D, the proximity graph and the palette (Task 1, on top of the 331 MB)
+
+**Palette and proximity graph: negligible, measured.** `buildPalette`
+(`packages/viewer/src/render/palette.ts`), which builds the co-visibility and
+proximity graphs internally and discards them once colours are assigned,
+measured against the real `versions.2.json` with `node --expose-gc`:
+
+| | heap |
+|---|---|
+| after loading `versions.2.json` alone | 79.3 MB |
+| immediately after `buildPalette`, before gc (transient peak: covisibility graph, proximity graph, interval maps, all still live) | 86.0 MB (+6.7 MB) |
+| after `buildPalette` + forced gc (retained: the `Palette` closure only) | 79.3 MB (+0.0 MB) |
+
+The graphs cost about 7 MB transiently while being built and colour-assigned,
+then collect back to nothing measurable -- `buildPalette` is called once per
+renderer construction and its graphs are not kept. This does not move the
+memory story.
+
+**Path2D: analytical estimate, not a measurement.** `Path2D` is a browser
+canvas API with no Node equivalent, and this project intentionally carries no
+jsdom/canvas dependency (`packages/viewer` has none -- see its `package.json`)
+for a build pipeline that otherwise never touches a DOM, so it cannot be
+constructed or measured here the way the palette was. Estimated instead from
+vertex counts and typical native path backing (roughly 8-24 bytes per vertex,
+covering the range from a single-precision two-float point to a more
+conservative double-precision-plus-verb encoding):
+
+| level | vertices | Path2D estimate (all versions cached) |
+|---|---|---|
+| coarse | 2,400,206 | 19-58 MB |
+| mid | 2,835,905 | 23-68 MB |
+| full | 3,422,830 | 27-82 MB |
+
+`canvas.ts`'s path cache is bounded at one `Path2D` per version with no
+eviction (`pathFor`), so over a long scrub session it can grow to hold every
+version's path at the active level -- the totals above are that worst case,
+not the typical one (the plan already notes only ~195 paths are visible at
+once; the cache holds visited-but-off-screen versions too). "The path cache is
+per level, and only the active level's is kept" bounds this to one level's
+total at a time, not three summed.
+
+Even at the high end (82 MB for full, worst case, all 13,380 versions visited
+in one session) this adds roughly a quarter to the 331 MB artifact baseline,
+not a multiple of it. Consistent with the plan's expectation: this does not
+change the design.
+
 ### The maximum cannot discriminate between levels
 
 Phase 1 measured border displacement per shared arc and found coarse's worst at
@@ -85,6 +131,72 @@ markedly from coarse to mid where the maximum does not.
 Task 1 redoes this with the real Hausdorff measurement from
 `packages/pipeline/tests/acceptance.test.ts` against the full build, and its
 output sets the thresholds and the criterion.
+
+### Threshold viability check (Task 1, real measurement)
+
+**The percentile does not discriminate either. This is the risk the plan
+called out as plausible, and it happened.**
+
+Measured with `measureDisplacement` (extracted into
+`packages/pipeline/src/stages/displacement.ts`) against the full pinned build
+-- 13,380 versions, both levels seeing the same 22,215 shared arcs -- via
+`pnpm build && pnpm displacement`:
+
+| level | arcs | identical | dropped | displaced | p50 | p90 | p95 | p99 | max |
+|---|---|---|---|---|---|---|---|---|---|
+| coarse | 22,215 | 21,058 (94.8%) | 1,150 | 7 | 0.001592 | 0.002932 | 0.002932 | 0.002932 | 0.002932 |
+| mid | 22,215 | 21,508 (96.8%) | 700 | 7 | 0.001593 | 0.002932 | 0.002932 | 0.002932 | 0.002932 |
+
+(projected units; at 258.6 px/unit, p99 is 0.758 px for both levels)
+
+Both levels have exactly **7** displaced arcs, and they are the same seven
+world-space events at both levels -- the same finding Phase 1 made about the
+maximum, and it turns out to also be true of p90, p95 and p99, because with
+only 7 non-zero values out of 22,215 arcs, `floor(0.9 * 7)` through
+`floor(0.99 * 7)` are all index 6: the same single largest value as the
+maximum. p50 (index 3 of 7) is the only percentile that differs at all between
+levels, and it differs by 0.06%, well inside noise.
+
+**Coarse's and mid's p99 are 0.002932 and 0.002932 projected units -- a
+difference under 0.02%, nowhere near the 20% threshold this plan set for
+stopping.** Per the plan: *"If coarse's and mid's p99 figures come back within
+roughly 20% of each other, stop and report that rather than picking thresholds
+anyway."* This task stops here. **No thresholds are set.**
+
+Why this happened: the metric only has a non-zero displacement on an arc where
+simplification moves a retained point without dropping the whole side (a
+"displaced" arc, as opposed to a "dropped" one). That population is tiny --
+7 arcs out of 22,215, 0.03% -- and it is apparently the *same* 7 arcs at both
+simplification levels, because whatever geometric feature causes them to
+retain-but-shift is a property of the arc's shape, not of how aggressively it
+is simplified. The design's premise -- "percentile discriminates where the
+maximum does not" -- assumed a broader tail of displaced arcs whose severity
+would vary with simplification aggressiveness. That tail does not exist for
+this dataset at these two levels: the displaced population is a handful of
+outliers, not a distribution, so every percentile above the median lands on
+the same outliers the maximum already found.
+
+**This is a question for the project owner, not something to paper over.**
+Level switching's fidelity justification -- "each level's threshold is where
+its own p99 crosses one screen pixel" (Decision 5, above) -- does not produce
+two different thresholds from this data; it produces the same number twice.
+The options, none of them mine to choose:
+
+1. Drop per-level fidelity thresholds entirely and pick level-switch scales on
+   a different basis (payload size, e.g. "switch to mid where its 4.47 MB is
+   worth the fetch"), accepting that fidelity is not what discriminates them.
+2. Keep percentile-based thresholds but measure a different quantity -- e.g.
+   the identical-fraction (94.8% vs 96.8%, which *does* separate) or per-arc
+   RMS displacement rather than per-arc worst-case, which would not collapse
+   onto the same 7 outliers.
+3. Accept that this dataset's geometry does not support the milestone's
+   original two-tier fidelity story, and treat mid as existing for payload
+   reasons only, not fidelity ones.
+
+The `measureDisplacement` stage and its CLI (`pnpm displacement`) are built
+and correct regardless of which option is chosen -- they are what produced
+this finding, and whichever metric replaces per-arc-worst (if any) can reuse
+the same shared-arc construction.
 
 ### The real viewport scale
 
@@ -363,11 +475,16 @@ because the engine had no reason to know about pixels; now it has a bounding
 box, and the shortest path from `render/` is to pass the viewport itself.
 Review should watch this specifically.
 
-**Task 1's measurement may not separate the levels as cleanly as the proxy
-suggests.** The proxy is loose. If the real p99 figures come back close
-together, the thresholds collapse toward each other and level switching buys
-less than expected -- in which case the honest response is to say so and
-reconsider whether full detail earns its 12 MB, not to pick thresholds anyway.
+**Realized: Task 1's measurement does not separate the levels.** The proxy was
+loose, and the real Hausdorff measurement shows coarse's and mid's p99 at
+0.002932 projected units each -- under 0.02% apart, the same seven world-space
+events already found at the maximum. See "Threshold viability check (Task 1,
+real measurement)" above. No thresholds are set; the project owner needs to
+choose one of the options recorded there before level switching's fidelity
+story can be finished. This blocks Decision 5 and item 15 of the acceptance
+criteria, and likely the decision record "Percentile displacement replaces the
+maximum" needs to be rewritten once a direction is chosen, not merely filed as
+planned.
 
 **331 MB is artifacts only.** Path2D objects, the proximity graph and the
 palette sit on top and are unmeasured. Unlikely to change the design, but the

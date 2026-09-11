@@ -59,11 +59,11 @@ describe("buildChangeIndex", () => {
     expect(index.cells).toHaveLength(GRID.cols * GRID.rows);
   });
 
-  it("records both the start and the end year of every version", () => {
+  it("records the start year and the year the fade-out begins", () => {
     const index = buildChangeIndex([version("a", -200, 476)], { a: squareAt(0, 0, 0.1) }, S);
     const years = index.cells.flat();
     expect(years).toContain(-200);
-    expect(years).toContain(476);
+    expect(years).toContain(477);
   });
 
   it("sorts and deduplicates each cell", () => {
@@ -77,7 +77,7 @@ describe("buildChangeIndex", () => {
       expect(new Set(cell).size).toBe(cell.length);
     }
     const populated = index.cells.filter((c) => c.length > 0);
-    expect(populated[0]).toEqual([100, 200, 300]);
+    expect(populated[0]).toEqual([100, 201, 301]);
   });
 
   it("buckets each polygon separately, so a scattered version does not claim the span between its parts", () => {
@@ -95,6 +95,32 @@ describe("buildChangeIndex", () => {
     const populated = index.cells.filter((c) => c.length > 0).length;
     expect(populated).toBeLessThan(10);
   });
+
+  it("buckets the year a fade-out begins, not the year the claim ends", () => {
+    // A version ending at 1200 stops being drawn at 1201, so 1201 is the year
+    // the view changes. Bucketing 1200 records a moment nothing happens at.
+    const index = buildChangeIndex(
+      [version("a@1100", 1100, 1200)],
+      { "a@1100": squareAt(0, 0, 0.1) },
+      S,
+    );
+    const years = new Set(index.cells.flat());
+    expect(years.has(1100)).toBe(true);
+    expect(years.has(1201)).toBe(true);
+    expect(years.has(1200)).toBe(false);
+  });
+
+  it("collapses adjacent transitions to one moment", () => {
+    // Successive versions of one polity abut: a ends at 1200, b starts at 1201.
+    // That is ONE transition, and both rows must agree it happens at 1201.
+    const index = buildChangeIndex(
+      [version("a@1100", 1100, 1200), version("a@1201", 1201, 1300)],
+      { "a@1100": squareAt(0, 0, 0.1), "a@1201": squareAt(0, 0, 0.1) },
+      S,
+    );
+    const years = [...new Set(index.cells.flat())].sort((x, y) => x - y);
+    expect(years).toEqual([1100, 1201, 1301]);
+  });
 });
 
 describe("nextChangeAfter", () => {
@@ -104,8 +130,8 @@ describe("nextChangeAfter", () => {
 
   it("finds the next change strictly after the given year", () => {
     expect(nextChangeAfter(index, 0, [-0.1, -0.1, 0.3, 0.3])).toBe(100);
-    expect(nextChangeAfter(index, 100, [-0.1, -0.1, 0.3, 0.3])).toBe(200);
-    expect(nextChangeAfter(index, 200, [-0.1, -0.1, 0.3, 0.3])).toBe(900);
+    expect(nextChangeAfter(index, 100, [-0.1, -0.1, 0.3, 0.3])).toBe(201);
+    expect(nextChangeAfter(index, 201, [-0.1, -0.1, 0.3, 0.3])).toBe(900);
   });
 
   it("returns null when nothing changes later in that viewport", () => {
@@ -164,7 +190,8 @@ describe("nextChangeAfter", () => {
         for (let y = r.y0; y <= r.y1; y++) {
           for (let x = r.x0; x <= r.x1; x++) {
             const cell = rebuilt.cells[y * finer.cols + x] as number[];
-            for (const year of [v.fromYear, v.toYear]) if (!cell.includes(year)) cell.push(year);
+            for (const year of [v.fromYear, v.toYear + 1])
+              if (!cell.includes(year)) cell.push(year);
             cell.sort((p, q) => p - q);
           }
         }
@@ -172,8 +199,8 @@ describe("nextChangeAfter", () => {
     }
 
     expect(nextChangeAfter(rebuilt, 0, [-0.1, -0.1, 0.3, 0.3])).toBe(100);
-    expect(nextChangeAfter(rebuilt, 100, [-0.1, -0.1, 0.3, 0.3])).toBe(200);
-    expect(nextChangeAfter(rebuilt, 200, [-0.1, -0.1, 0.3, 0.3])).toBe(900);
+    expect(nextChangeAfter(rebuilt, 100, [-0.1, -0.1, 0.3, 0.3])).toBe(201);
+    expect(nextChangeAfter(rebuilt, 201, [-0.1, -0.1, 0.3, 0.3])).toBe(900);
     expect(nextChangeAfter(rebuilt, 5000, [-0.1, -0.1, 0.3, 0.3])).toBeNull();
     expect(nextChangeAfter(rebuilt, 0, [2.0, 1.0, 2.2, 1.2])).toBeNull();
 

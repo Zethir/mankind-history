@@ -35,3 +35,31 @@ resolution was picked for query precision, not size.
 - Building the index means iterating every polygon in every version rather
   than reading one bbox off `VersionGeometry`, which is more work at build
   time in exchange for a materially tighter index.
+
+## Correction (Milestone 2, Task 2): which YEARS a cell buckets
+
+This decision is about which polygon a cell buckets against; it says nothing
+about which year. The original implementation bucketed each version's
+`fromYear` and `toYear` directly, and that part was wrong independent of the
+polygon-vs-version question above.
+
+A version stops being drawn at `toYear + 1`, not `toYear` - the fade-out
+begins the year after the claim ends (see the fade-out logic in
+`packages/viewer`). Bucketing `toYear` records a year at which nothing
+happens, and misses the year at which something does. It also makes one
+transition look like two events a year apart: when version A of a polity ends
+at 1200 and version B begins at 1201, bucketing `toYear` records both 1200 and
+1201 for what is really one moment of change. On the real dataset this put
+937 distinct years in the index where only 509 real transition moments exist.
+
+Milestone 1 sidestepped this entirely by deriving event years from version
+rows directly (`fromYear` and `toYear + 1`, see
+`packages/viewer/src/engine/change-years.ts`) rather than from the index -
+exact only because with no zoom the viewport is the world and a brute-force
+scan over all rows is affordable. Viewport-scoped playback cannot do that; it
+needs the index itself to be correct.
+
+The fix buckets `fromYear` and `toYear + 1` instead of `fromYear` and
+`toYear`, in both `buildChangeIndex` and its independent oracle
+`nextChangeBruteForce` - the two must move together or the oracle stops
+verifying anything.

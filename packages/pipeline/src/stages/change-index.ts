@@ -107,7 +107,11 @@ export function buildChangeIndex(
         for (let x = x0; x <= x1; x++) {
           const cell = cells[y * GRID.cols + x] as Set<number>;
           cell.add(version.fromYear);
-          cell.add(version.toYear);
+          // A fade-out begins the year AFTER the claim ends, so toYear + 1 is
+          // the moment the view changes. Bucketing toYear records a year
+          // nothing happens at, and makes a transition look like two events
+          // a year apart.
+          cell.add(version.toYear + 1);
         }
       }
     }
@@ -180,7 +184,7 @@ export function nextChangeBruteForce(
       }
     }
     if (!overlaps) continue;
-    for (const candidate of [version.fromYear, version.toYear]) {
+    for (const candidate of [version.fromYear, version.toYear + 1]) {
       if (candidate > year && (best === null || candidate < best)) best = candidate;
     }
   }

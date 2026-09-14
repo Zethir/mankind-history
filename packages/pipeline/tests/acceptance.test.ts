@@ -412,8 +412,13 @@ describe("simplification", () => {
     // full argument, including why a criterion evaluated at maximum zoom was
     // rejected too.
     //
-    // The replacement measures p99 displacement across shared arcs at ONE
-    // real, shared reference scale -- DISPLACEMENT_REFERENCE_SCALE
+    // The replacement measures p99 displacement across the DISPLACED arcs --
+    // the ones simplification moved without dropping, 7 of 22,215 on the real
+    // build -- at ONE real, shared reference scale. Across all shared arcs the
+    // p99 would be exactly 0 and would pass trivially; the dropped arcs (1,150
+    // at coarse, 700 at mid) are excluded from the statistic entirely, which
+    // bounds what this criterion can claim. The scale is
+    // DISPLACEMENT_REFERENCE_SCALE
     // (`fitScale(1400, 900)`, canon.ts), not a per-level guess. Levels no
     // longer switch on zoom (0020, "Levels are a bandwidth difference, not a
     // fidelity one"), so there is no per-level scale left to measure at.

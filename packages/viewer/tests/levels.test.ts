@@ -32,7 +32,7 @@ function registry() {
 }
 
 describe("prefetch policy", () => {
-  // Acceptance criterion 8 (amended: the prefetch chain is unconditional now
+  // Acceptance criterion 6 (amended: the prefetch chain is unconditional now
   // that level switching by zoom was dropped -- see progress.md Task 7
   // ruling). Coarse is resident from startup because main.ts already loads
   // it before the registry exists.
@@ -72,7 +72,7 @@ describe("prefetch policy", () => {
     expect(requested).toContain("full");
   });
 
-  // Acceptance criterion 9.
+  // Acceptance criterion 7.
   it("never re-requests a level already resident or in flight", async () => {
     const { r, requested, settle } = registry();
     r.onFirstPaint();

@@ -11,7 +11,7 @@ describe("ChangeYears", () => {
   const cy = new ChangeYears(changes);
   const WORLD = changes.grid.bounds as [number, number, number, number];
 
-  // Acceptance criterion 10.
+  // Acceptance criterion 8.
   it("returns the smallest event year strictly greater than the query", () => {
     let year = -10_000;
     for (let i = 0; i < 50; i++) {
@@ -26,7 +26,7 @@ describe("ChangeYears", () => {
     expect(cy.nextChangeAfter(1e9, WORLD)).toBeNull();
   });
 
-  // Acceptance criterion 11. The two implementations must agree where their
+  // Acceptance criterion 9. The two implementations must agree where their
   // domains overlap -- a world bbox is exactly Milestone 1's question.
   it("agrees with the row-derived sequence for a world-wide bbox", () => {
     const fromRows = [...new Set(versions.rows.flatMap((r) => [r.fromYear, r.toYear + 1]))].sort(

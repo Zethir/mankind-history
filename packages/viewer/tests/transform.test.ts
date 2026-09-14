@@ -148,7 +148,7 @@ describe("toScreen / fromScreen", () => {
 
 describe("fitWorld", () => {
   // Acceptance criterion 2.
-  it("is the identity that any pan and zoom sequence resets to", () => {
+  it("recomputes from width and height alone, which panBy and zoomAt preserve", () => {
     const fit = fitWorld(1400, 900);
     let v = fit;
     v = zoomAt(v, 4, 300, 200);

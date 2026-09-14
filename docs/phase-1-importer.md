@@ -120,11 +120,13 @@ Runnable checks. "The importer works" is not a criterion.
 - After simplification, no pair of previously-adjacent polygons has gained a
   gap wider than one screen pixel. Amended by
   `docs/decisions/0020-percentile-displacement.md`: measured as each level's
-  p99 border displacement across its shared arcs, at one shared reference
-  scale (`DISPLACEMENT_REFERENCE_SCALE`, `packages/model/src/canon.ts`), not
-  as the maximum at each level's own guessed scale. 0020 records why the
-  maximum could not discriminate coarse from mid and argues against
-  evaluating it at maximum zoom instead.
+  p99 border displacement across its displaced arcs (the arcs whose sides
+  actually disagree; dropped arcs -- a side losing the arc entirely -- are
+  excluded from the statistic, not folded in as zeros), at one shared
+  reference scale (`DISPLACEMENT_REFERENCE_SCALE`,
+  `packages/model/src/canon.ts`), not as the maximum at each level's own
+  guessed scale. 0020 records why the maximum could not discriminate coarse
+  from mid and argues against evaluating it at maximum zoom instead.
 - No polygon crosses the antimeridian in projected space.
 
 **Index**

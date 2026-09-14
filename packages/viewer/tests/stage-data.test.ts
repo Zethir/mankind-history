@@ -1,13 +1,16 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { SCHEMA_VERSION } from "@history/model";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ARTIFACT_FILES,
   listFiles,
   resolveSourceDir,
   stageFiles,
 } from "../scripts/stage-data-lib.mjs";
+import { fetchArtifacts, fetchLand, fetchVersions } from "../src/data/artifacts";
+import type { DetailLevel } from "../src/render/level";
 
 // All fixtures live under a fresh temp directory per test, never inside the
 // repo's real dist/ or fixtures/dist/ -- resolveSourceDir and stageFiles take
@@ -140,5 +143,74 @@ describe("stageFiles", () => {
     mkdirSync(out, { recursive: true });
 
     expect(() => stageFiles(source, EXPECTED_ARTIFACT_FILES, out)).toThrow(/manifest\.json/);
+  });
+});
+
+/**
+ * The gap above: EXPECTED_ARTIFACT_FILES is hand-copied deliberately (see the
+ * comment on it), which catches a typo or a dropped entry in ARTIFACT_FILES
+ * but cannot catch the bug this branch actually shipped -- a *new fetch* with
+ * no corresponding staged file (`changes.json`, unstaged for an entire task
+ * while `fetchArtifacts` already fetched it unconditionally; the deployed
+ * site would have 404'd at startup).
+ *
+ * This suite ties ARTIFACT_FILES to the real fetch call sites instead of to
+ * a second hand-copied list, so it cannot become the same kind of tautology
+ * EXPECTED_ARTIFACT_FILES's comment warns against: the "expected" side below
+ * is not a literal array anyone typed out -- it is the set of filenames
+ * produced by actually *calling* `fetchArtifacts`, `fetchVersions` (every
+ * `DetailLevel`) and `fetchLand` (every level the pipeline emits land for)
+ * against a stubbed `fetch` and recording what URL each call requested. A
+ * fetch site added to artifacts.ts with no matching entry in ARTIFACT_FILES
+ * makes this test request a name ARTIFACT_FILES does not contain and fails
+ * it -- mechanically, the way the design brief asks for, not by convention.
+ *
+ * The direction is asymmetric on purpose: `manifest.json` is staged and
+ * never fetched by any of these three functions, and that is correct (the
+ * manifest is for humans and CI, not the running viewer) -- this test only
+ * ever asserts requested-implies-staged, never the reverse.
+ */
+describe("every artifact the viewer actually fetches is staged", () => {
+  function stubFetch(): string[] {
+    const requestedUrls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        requestedUrls.push(String(input));
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          json: async () => ({ schemaVersion: SCHEMA_VERSION }),
+        } as Response;
+      }),
+    );
+    return requestedUrls;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("requests only files that ARTIFACT_FILES stages", async () => {
+    const requestedUrls = stubFetch();
+
+    await fetchArtifacts();
+    const levels: readonly DetailLevel[] = ["coarse", "mid", "full"];
+    for (const level of levels) await fetchVersions(level);
+    for (const level of ["coarse", "mid"] as const) await fetchLand(level);
+
+    const requestedFiles = requestedUrls.map((url) => url.split("/").pop() as string);
+
+    // Sanity check on the test's own method, not the thing under test: if
+    // this were empty because the stub silently swallowed every call
+    // (wrong URL shape, wrong global name), every assertion below would
+    // vacuously pass. See mankind-history's own "measure before claiming"
+    // lesson -- a check that cannot fail is not a check.
+    expect(requestedFiles.length).toBeGreaterThan(0);
+
+    for (const file of requestedFiles) {
+      expect(ARTIFACT_FILES).toContain(file);
+    }
   });
 });

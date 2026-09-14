@@ -52,8 +52,16 @@ evaluated at, not the statistic.
 ## Decision
 
 Replace the per-level-scale maximum with: **at one shared, real reference
-scale, each level's p99 displacement across its shared arcs stays under one
-screen pixel.**
+scale, each level's p99 displacement across its displaced arcs stays under
+one screen pixel.** "Displaced arcs", not "shared arcs": `measureDisplacement`
+records a value only for an arc whose sides actually disagree, so the
+statistic is the p99 of the seven arcs that moved, not of all 22,215 shared
+arcs (whose p99 would be exactly 0 and would pass trivially). The dropped
+arcs -- one side losing the arc entirely, 1,150 at coarse and 700 at mid,
+see the table below -- are excluded from the statistic the same way, for the
+same reason: a removal is not a displacement and folding either kind of
+excluded arc in as a zero would understate what the criterion is actually
+bounding.
 
 The scale is `DISPLACEMENT_REFERENCE_SCALE` in `packages/model/src/canon.ts`,
 set to `fitScale(1400, 900)` = **258.6242** px/unit -- the viewer's actual

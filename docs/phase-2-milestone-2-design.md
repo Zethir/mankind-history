@@ -11,6 +11,19 @@ Read `docs/architecture.md` first. Decisions 0002, 0006, 0013 and 0015 govern
 most of what follows; one of them is amended here and one Phase 1 criterion is
 replaced.
 
+> **Superseded by what shipped.** This is a frozen design-phase snapshot, kept
+> for its argument, not as a checklist of what the branch does today. Three
+> things below no longer hold: `full`'s prefetch is not gated on a zoom (the
+> gate was designed here and dropped before ship -- see
+> `docs/architecture.md`'s "Zoom, progressive detail" section), the "7.36 MB
+> common path" figure below assumed that gate and never happened (every
+> visitor now eventually pays the whole 19.4 MB gzipped, per
+> `docs/decisions/0021-artifacts-load-whole.md`), and `landLevelFor` -- named
+> below as surviving -- was deleted once level switching by zoom was dropped.
+> The "Acceptance criteria" section carries its own banner with the same
+> pointers; do not check a future milestone's work against this document's
+> criteria list without reading that banner first.
+
 ## Scope
 
 In:
@@ -483,6 +496,19 @@ this decision, and a future reader proposing zoom-based switching again
 should be pointed at this table before rebuilding it.
 
 ## Acceptance criteria
+
+> **Superseded by what shipped -- read before checking work against this
+> list.** Criterion 6 below still says "full is not requested until a zoom
+> has occurred": the branch's own test
+> (`packages/viewer/tests/levels.test.ts`) asserts the opposite -- full is
+> requested unconditionally once mid's fetch settles, no zoom gate. Criterion
+> 5's mechanism, `landLevelFor`, was deleted; land's saturate-at-mid invariant
+> is now carried by `fetchLand`'s parameter type instead (see
+> `docs/architecture.md`). See `docs/decisions/0020-percentile-displacement.md`,
+> `docs/decisions/0021-artifacts-load-whole.md`, and `docs/architecture.md`
+> for what actually shipped in each case. The next milestone's author should
+> check work against those, and against the named tests, not against the
+> prose below.
 
 Named tests, run by `pnpm test` against `fixtures/dist`.
 

@@ -116,10 +116,22 @@ is the world.
 (`src/render/level.ts`) names three artifacts -- coarse, mid, full -- but
 nothing selects between them by zoom scale. Coarse paints on first load; mid
 is prefetched at low priority once first paint completes and silently
-replaces coarse's geometry when it arrives; full is fetched only once the
-user has zoomed at least once, on the theory that a zoom is evidence someone
-is exploring rather than glancing. Detail only ever improves and never
-downgrades. This shape exists because Milestone 2 twice tried to build a
+replaces coarse's geometry when it arrives; full is requested unconditionally
+once mid's own fetch settles -- succeeds or fails -- with no zoom gate at
+all: `LevelRegistry` (`src/data/levels.ts`) queues full from mid's
+`.finally()`, regardless of whether the user has ever touched the viewport.
+Detail only ever improves and never downgrades. A zoom gate on `full` was
+carried earlier in the milestone and was dropped, not merely left
+unmentioned: it existed to spare a visitor who never zooms the 12 MB
+gzipped `versions.2` fetch, and that saving was knowingly traded away once
+zoom-based level switching itself was dropped (below) and nothing was left
+to make the gate's premise -- "a zoom is evidence of exploring" -- meaningful
+as a gate on anything. The cost, stated plainly: every visitor now
+eventually pulls all three `versions.*` levels regardless of whether they
+ever zoom, 19.4 MB gzipped transferred and 331 MB resident in heap once all
+three are loaded (`docs/phase-2-milestone-2-design.md`'s payload table; see
+also `docs/decisions/0021-artifacts-load-whole.md`). This shape exists
+because Milestone 2 twice tried to build a
 zoom-based switching threshold and measured, both times, that this dataset
 does not support one: border displacement (Task 1) turned out to be the same
 seven world-space events at coarse and mid regardless of scale, and
@@ -130,6 +142,23 @@ level looks meaningfully worse than the next. See
 docs/phase-2-milestone-2-design.md, "Thresholds: what the measurement
 actually showed", for the full arithmetic and the two measurements that
 killed the idea.
+
+**A level upgrade swaps geometry but never rebuilds the palette,** and that
+is a known trade, not an oversight. `MapRenderer.setVersions` (`src/render/
+canvas.ts`) only swaps in the new artifact and clears the cached `Path2D`s --
+it does not call `buildPalette` again, on the reasoning that every level's
+`rows` are byte-identical, so nothing the palette's own colour assignment
+reads (`memberOf`, validity intervals) changes across a level swap. That
+reasoning is incomplete: `buildProximityGraph` (`src/render/palette.ts`)
+colours partly by spatial adjacency, read from each version's bounding box in
+`versions.geometry`, and simplification can shrink a bbox -- so a pair
+adjacent at `full` could in principle be non-adjacent at `coarse` and end up
+sharing a colour once the upgrade lands. This was not reproduced on the
+fixture, and rebuilding was judged the riskier choice anyway: `buildPalette`
+throws on palette overflow, and a rebuild mid-session could kill a running
+map over a change too subtle to be worth that risk. The code is unchanged;
+this paragraph exists so a future reader finds a recorded trade rather than
+an apparent gap.
 
 **Land saturates at mid by construction, not by a lookup.** The pipeline
 emits only `land.0` and `land.1` -- there is no `land.2` -- so the land
@@ -149,9 +178,13 @@ impossible to write, so the type is the record now, not a comment pointing at
 retired code.
 
 **A failed fetch does not retry in a loop.** If a level's fetch fails, the
-viewer stays on whatever level it already has, logs it, and does not
-re-attempt on every subsequent zoom event -- a multi-megabyte request retried
-on every wheel tick would look like a hang.
+viewer stays on whatever level it already has and logs it. `LevelRegistry`
+only ever moves an entry forward (`absent` -> `loading` -> `resident` or
+`failed`) and never resets one back to `absent`, so a failed level is never
+automatically retried for the rest of the session -- there is no zoom or
+scroll trigger left to retry it *from* now that level switching does not run
+off either, and a multi-megabyte request retried in a loop would look like a
+hang regardless of what triggered it.
 
 **Playback stays viewport-scoped, and the asymmetry is deliberate.**
 `ChangeYears` (`src/engine/change-years.ts`) answers "what changes next"
@@ -305,8 +338,11 @@ Measured on the real dataset, both levels seeing the same 22,215 shared arcs
 | mid | 21,508 (96.8%) | 700 | 7 | 0.7583 px |
 
 **Both levels meet the one-pixel bound**, measured as decision 0020 amends
-it: p99 displacement across shared arcs, at one shared reference scale
-(`DISPLACEMENT_REFERENCE_SCALE` = 258.6242 px/unit, `fitScale(1400, 900)`),
+it: p99 displacement across the displaced arcs (7 of the 22,215 shared arcs
+above; the 1,150 coarse / 700 mid dropped arcs are excluded from the
+statistic too, not counted as zero displacement), at one shared reference
+scale (`DISPLACEMENT_REFERENCE_SCALE` = 258.6242 px/unit, `fitScale(1400,
+900)`),
 rather than the maximum at each level's own guessed, mismatched scale. The
 original measurement above found the maximum could not tell coarse from mid
 apart at all -- the same seven world-space events, ~0.0029 projected units

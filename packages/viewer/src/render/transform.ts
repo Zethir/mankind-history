@@ -127,3 +127,17 @@ export function panBy(v: Viewport, dxScreen: number, dyScreen: number): Viewport
     centreY: v.centreY + dyScreen / v.scale,
   });
 }
+
+/**
+ * The viewport's visible extent in unscaled projected units, as
+ * [minX, minY, maxX, maxY] -- the shape `Engine.setViewportBbox` and
+ * `cellRangeFor` expect. World y is up, but min/max ordering does not care
+ * which screen edge a coordinate corresponds to: `centreY - halfHeight` is
+ * always the smaller of the two since halfHeight is non-negative, so unlike
+ * `toScreen` (which flips y to draw) this needs no flip.
+ */
+export function viewportBbox(v: Viewport): [number, number, number, number] {
+  const halfW = v.width / 2 / v.scale;
+  const halfH = v.height / 2 / v.scale;
+  return [v.centreX - halfW, v.centreY - halfH, v.centreX + halfW, v.centreY + halfH];
+}

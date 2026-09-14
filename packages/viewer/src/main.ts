@@ -1,6 +1,10 @@
-import { fetchArtifacts } from "./data/artifacts";
+import { fetchArtifacts, fetchLand, fetchVersions } from "./data/artifacts";
+import { bestAvailable, LevelRegistry } from "./data/levels";
 import { Engine } from "./engine/engine";
 import { MapRenderer } from "./render/canvas";
+import type { DetailLevel } from "./render/level";
+import { landLevelFor } from "./render/level";
+import { viewportBbox } from "./render/transform";
 import { Chrome } from "./ui/chrome";
 
 async function start(): Promise<void> {
@@ -15,6 +19,7 @@ async function start(): Promise<void> {
   let engine: Engine;
   let renderer: MapRenderer;
   let chrome: Chrome;
+  let registry: LevelRegistry;
   try {
     const artifacts = await fetchArtifacts();
 
@@ -29,7 +34,11 @@ async function start(): Promise<void> {
     // replaced, so an escaped throw leaves a blank page instead of the error
     // state below.
     renderer = new MapRenderer(canvas, artifacts.versions, artifacts.land);
-    chrome = new Chrome(chromeRoot, engine, renderer);
+    // coarse is seeded resident by the registry itself (main.ts already
+    // loaded it, above); the injected fetcher only ever needs to satisfy mid
+    // and full.
+    registry = new LevelRegistry((level) => fetchVersions(level));
+    chrome = new Chrome(chromeRoot, engine, renderer, canvas, registry);
   } catch (error) {
     const message = document.createElement("p");
     message.className = "error";
@@ -39,6 +48,18 @@ async function start(): Promise<void> {
   }
 
   window.addEventListener("resize", () => renderer.resize());
+
+  // The mid land basemap (954 KB in the live dist) is fetched once, after
+  // first paint, same as the progressive versions prefetch chain -- cheap
+  // next to the 47 MB versions artifacts, so there is no equivalent staged
+  // request here. A failed fetch is logged and otherwise ignored: the coarse
+  // basemap the renderer already has keeps drawing, per the requirement that
+  // a land-fetch failure must not break the frame loop.
+  let midLand: Awaited<ReturnType<typeof fetchLand>> | null = null;
+  let midLandRequested = false;
+  let landLevel: "coarse" | "mid" = "coarse";
+  let versionsLevel: DetailLevel = "coarse";
+  let firstPaintDone = false;
 
   // A throw from advance/draw/update must not silently freeze the loop at
   // whatever frame was last drawn: re-arming happens in `finally` so a single
@@ -55,10 +76,48 @@ async function start(): Promise<void> {
     try {
       const dt = Math.min((now - last) / 1000, 0.1);
       last = now;
+
+      engine.setViewportBbox(viewportBbox(renderer.viewport));
       const frame = engine.advance(dt);
+
+      // Detail only ever improves (LevelRegistry never regresses), so this
+      // only ever moves versionsLevel/landLevel forward too. artifactOf
+      // returns null for "coarse" (the registry never fetches it -- it was
+      // seeded resident from what main.ts already loaded above), which is
+      // exactly why versionsLevel starts at "coarse" and this never tries to
+      // hand the renderer a null artifact.
+      const wantedLevel = bestAvailable(registry);
+      if (wantedLevel !== versionsLevel) {
+        const artifact = registry.artifactOf(wantedLevel);
+        if (artifact) {
+          renderer.setVersions(artifact);
+          versionsLevel = wantedLevel;
+        }
+      }
+      const wantedLand = landLevelFor(wantedLevel);
+      if (wantedLand !== landLevel && midLand) {
+        renderer.setLand(midLand);
+        landLevel = wantedLand;
+      }
+
       renderer.draw(frame);
       chrome.update(frame);
       consecutiveFailures = 0;
+
+      if (!firstPaintDone) {
+        firstPaintDone = true;
+        registry.onFirstPaint();
+      }
+      if (!midLandRequested) {
+        midLandRequested = true;
+        fetchLand("mid")
+          .then((land) => {
+            midLand = land;
+          })
+          .catch((error: unknown) => {
+            console.error("history map: mid land fetch failed", error);
+          });
+      }
     } catch (error) {
       consecutiveFailures += 1;
       console.error("history map: frame failed", error);

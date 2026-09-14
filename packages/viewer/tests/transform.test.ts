@@ -7,6 +7,7 @@ import {
   MAX_ZOOM_FACTOR,
   panBy,
   toScreen,
+  viewportBbox,
   zoomAt,
 } from "../src/render/transform";
 
@@ -189,5 +190,69 @@ describe("degenerate canvas", () => {
     expect(v.centreX).toBe(0);
     expect(v.centreY).toBe(0);
     expect(Number.isFinite(v.scale)).toBe(true);
+  });
+});
+
+describe("viewportBbox", () => {
+  // 1400x900 is width-bound (see the zoomAt anchor derivation above): at fit,
+  // the X axis touches the world's exact half-width with no surplus, while Y
+  // is letterboxed (surplus above WORLD_HALF_HEIGHT). This pins both halves
+  // of the formula independently -- a wrong value on X here is anything but
+  // +-WORLD_HALF_WIDTH; a wrong value on Y is +-WORLD_HALF_WIDTH too (the
+  // failure a copy-pasted "reuse width's half-extent for height" bug would
+  // produce, since 2.70663 != 900/2/258.62 = 1.7397).
+  it("matches the world's exact half-width on the width-bound axis at fit", () => {
+    const fit = fitWorld(1400, 900);
+    const [minX, minY, maxX, maxY] = viewportBbox(fit);
+    expect(minX).toBeCloseTo(-WORLD_HALF_WIDTH, 6);
+    expect(maxX).toBeCloseTo(WORLD_HALF_WIDTH, 6);
+    const expectedHalfH = 900 / 2 / fit.scale;
+    expect(minY).toBeCloseTo(-expectedHalfH, 6);
+    expect(maxY).toBeCloseTo(expectedHalfH, 6);
+  });
+
+  // Ordering: index 0/1 must be the minimum on each axis and 2/3 the maximum,
+  // regardless of which screen edge either corresponds to in world space (y
+  // is up). A implementation that returned [max, max, min, min] or swapped
+  // the two axis pairs would fail this on an off-centre viewport where the
+  // two axes are not accidentally symmetric.
+  it("always orders min before max on both axes", () => {
+    let v = zoomAt(fitWorld(1400, 900), 6, 300, 200);
+    v = panBy(v, -400, 150);
+    const [minX, minY, maxX, maxY] = viewportBbox(v);
+    expect(minX).toBeLessThan(maxX);
+    expect(minY).toBeLessThan(maxY);
+  });
+
+  // Ties the bbox to two relations derived independently of viewportBbox's
+  // own arithmetic: its width/height must equal canvas size divided by
+  // scale, and its centre must equal the viewport's centre. Using an
+  // asymmetric canvas (1400 != 900) means a halfW/halfH axis swap changes
+  // the width relation's outcome (2*halfH != v.width/v.scale unless
+  // width==height), so this catches that mistake as well as a dropped /2 or
+  // a dropped /scale, without simply re-deriving viewportBbox's own formula
+  // verbatim.
+  it("has width/height equal to canvas size over scale, centred on the viewport centre", () => {
+    let v = zoomAt(fitWorld(1400, 900), 5, 950, 120);
+    v = panBy(v, 220, -60);
+    const [minX, minY, maxX, maxY] = viewportBbox(v);
+    expect(maxX - minX).toBeCloseTo(v.width / v.scale, 9);
+    expect(maxY - minY).toBeCloseTo(v.height / v.scale, 9);
+    expect((minX + maxX) / 2).toBeCloseTo(v.centreX, 9);
+    expect((minY + maxY) / 2).toBeCloseTo(v.centreY, 9);
+  });
+
+  // Acceptance criterion territory for playback scoping: zooming in must
+  // shrink the queried extent, not leave it at the world-wide default -- a
+  // stub that always returned the fitWorld extent regardless of `v` would
+  // pass every test above only if it happened to be evaluated at fit, so
+  // this checks strict shrinkage after a real zoom.
+  it("shrinks strictly on both axes after zooming in", () => {
+    const fit = fitWorld(1400, 900);
+    const zoomed = zoomAt(fit, 8, 700, 450);
+    const [fMinX, fMinY, fMaxX, fMaxY] = viewportBbox(fit);
+    const [zMinX, zMinY, zMaxX, zMaxY] = viewportBbox(zoomed);
+    expect(zMaxX - zMinX).toBeLessThan(fMaxX - fMinX);
+    expect(zMaxY - zMinY).toBeLessThan(fMaxY - fMinY);
   });
 });

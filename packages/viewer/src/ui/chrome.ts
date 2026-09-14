@@ -1,8 +1,11 @@
+import { bestAvailable, type LevelRegistry } from "../data/levels";
 import { SPEED_STEPS } from "../engine/constants";
 import type { Engine } from "../engine/engine";
 import type { Frame } from "../engine/frame";
 import type { MapRenderer } from "../render/canvas";
+import type { DetailLevel } from "../render/level";
 import type { RenderMode } from "../render/render-mode";
+import { fitWorld, panBy, zoomAt } from "../render/transform";
 
 /**
  * Labelled by effect, not mechanism, so the owner can pick a mode without
@@ -27,10 +30,27 @@ function formatYear(year: number): string {
   return y < 0 ? `${-y} BCE` : `${y} CE`;
 }
 
+const LEVEL_LABELS: Record<DetailLevel, string> = {
+  coarse: "Coarse",
+  mid: "Mid",
+  full: "Full",
+};
+
+/** The next-finer level above `level`, or null once already at full. */
+function finerThan(level: DetailLevel): DetailLevel | null {
+  if (level === "coarse") return "mid";
+  if (level === "mid") return "full";
+  return null;
+}
+
+/** How many screen pixels of wheel deltaY correspond to a factor-of-e zoom step. */
+const WHEEL_ZOOM_SENSITIVITY = 0.0015;
+
 export class Chrome {
   private readonly readout: HTMLElement;
   private readonly play: HTMLButtonElement;
   private readonly scrubber: HTMLInputElement;
+  private readonly level: HTMLElement;
   private readonly speeds = new Map<string, HTMLButtonElement>();
   private readonly modes = new Map<RenderMode, HTMLButtonElement>();
   private scrubbing = false;
@@ -40,6 +60,8 @@ export class Chrome {
     root: HTMLElement,
     private readonly engine: Engine,
     private readonly renderer: MapRenderer,
+    canvas: HTMLCanvasElement,
+    private readonly registry: LevelRegistry,
   ) {
     const [lo, hi] = engine.range;
     root.innerHTML = `
@@ -59,6 +81,8 @@ export class Chrome {
             .map((m) => `<button type="button" data-mode="${m}">${MODE_LABELS[m]}</button>`)
             .join("")}
         </span>
+        <output class="level"></output>
+        <button class="reset" type="button">Reset</button>
       </div>
       <p class="note">
         Coastlines are modern. Over this range shorelines move: the Aral Sea, the
@@ -74,10 +98,70 @@ export class Chrome {
     const readout = root.querySelector<HTMLElement>(".year");
     const play = root.querySelector<HTMLButtonElement>(".play");
     const scrubber = root.querySelector<HTMLInputElement>(".scrub");
-    if (!readout || !play || !scrubber) throw new Error("chrome failed to build");
+    const level = root.querySelector<HTMLElement>(".level");
+    const reset = root.querySelector<HTMLButtonElement>(".reset");
+    if (!readout || !play || !scrubber || !level || !reset) {
+      throw new Error("chrome failed to build");
+    }
     this.readout = readout;
     this.play = play;
     this.scrubber = scrubber;
+    this.level = level;
+
+    // Reads the renderer's actual viewport back via fitWorld rather than
+    // keeping a remembered "original" viewport of its own -- the same
+    // no-shadow-state rule every other control here follows. fitWorld's
+    // width/height are the only inputs it needs, and the viewport already
+    // holds them.
+    reset.addEventListener("click", () => {
+      renderer.setViewport(fitWorld(renderer.viewport.width, renderer.viewport.height));
+    });
+
+    // Wheel zooms about the cursor. preventDefault plus { passive: false } is
+    // required together: without the listener option the browser ignores the
+    // call and scrolls the page under the map instead of zooming it.
+    canvas.addEventListener(
+      "wheel",
+      (event) => {
+        event.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const sx = event.clientX - rect.left;
+        const sy = event.clientY - rect.top;
+        const factor = Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY);
+        renderer.setViewport(zoomAt(renderer.viewport, factor, sx, sy));
+      },
+      { passive: false },
+    );
+
+    // Drag pans. Pointer capture keeps receiving move events even if the
+    // cursor leaves the canvas mid-drag, and the drag state resets on
+    // pointercancel as well as pointerup -- Milestone 1 shipped a stuck-
+    // scrubber bug from exactly that omission on the scrub input (see
+    // endScrub below); this is the same fix applied to the drag gesture.
+    let dragging = false;
+    let lastX = 0;
+    let lastY = 0;
+    canvas.addEventListener("pointerdown", (event) => {
+      dragging = true;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      canvas.setPointerCapture(event.pointerId);
+    });
+    canvas.addEventListener("pointermove", (event) => {
+      if (!dragging) return;
+      const dx = event.clientX - lastX;
+      const dy = event.clientY - lastY;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      renderer.setViewport(panBy(renderer.viewport, dx, dy));
+    });
+    const endDrag = (event: PointerEvent): void => {
+      if (!dragging) return;
+      dragging = false;
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    };
+    canvas.addEventListener("pointerup", endDrag);
+    canvas.addEventListener("pointercancel", endDrag);
 
     play.addEventListener("click", () => {
       if (engine.playing) engine.pause();
@@ -151,6 +235,17 @@ export class Chrome {
     }
     for (const [value, button] of this.modes) {
       button.classList.toggle("on", value === this.renderer.mode);
+    }
+
+    // The owner needs to tell "this is coarse because it is still loading" from
+    // "this is coarse and that is all there is" -- bestAvailable alone cannot
+    // distinguish those, so a finer level's own load state is checked directly.
+    const current = bestAvailable(this.registry);
+    const next = finerThan(current);
+    if (next !== null && this.registry.stateOf(next) === "loading") {
+      this.level.textContent = `${LEVEL_LABELS[current]} (loading ${LEVEL_LABELS[next].toLowerCase()}...)`;
+    } else {
+      this.level.textContent = LEVEL_LABELS[current];
     }
   }
 }

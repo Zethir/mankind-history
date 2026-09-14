@@ -3,7 +3,7 @@ import type { Frame } from "../engine/frame";
 import { buildAggregateParents, buildPalette, type Palette, resolveAggregateRoot } from "./palette";
 import { buildPolityIndex, type PolityIndexEntry } from "./polity-index";
 import { colourForDraw, type RenderMode } from "./render-mode";
-import { fitWorld, type Viewport } from "./transform";
+import { fitWorld, panBy, type Viewport } from "./transform";
 
 /**
  * Three ground tones and nothing else, per decision 0003. The middle tone is
@@ -89,8 +89,8 @@ export class MapRenderer {
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
-    private readonly versions: VersionsArtifact,
-    private readonly land: LandArtifact,
+    private versions: VersionsArtifact,
+    private land: LandArtifact,
   ) {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("canvas 2d context unavailable");
@@ -113,22 +113,59 @@ export class MapRenderer {
     this.resize();
   }
 
+  /**
+   * Resizes the backing store and re-clamps, without discarding the user's
+   * centre or zoom -- a window resize must not silently reset the view back
+   * to `fitWorld` now that interaction exists (it was harmless to do so
+   * before this task, when the viewport never moved from fit in the first
+   * place). Only what genuinely depends on canvas size changes: the backing
+   * store, width/height, and the clamp, since a smaller canvas can raise the
+   * minimum scale and shrink the pan limits. Reclamping goes through
+   * `panBy`'s shared `clamp()` (a zero-distance pan) rather than a second
+   * clamp implementation of this file's own.
+   */
   resize(): void {
     const dpr = window.devicePixelRatio || 1;
     const width = this.canvas.clientWidth;
     const height = this.canvas.clientHeight;
     this.canvas.width = Math.round(width * dpr);
     this.canvas.height = Math.round(height * dpr);
-    const fitted = fitWorld(width, height);
-    Object.assign(this.viewport, fitted);
+    const resized = panBy({ ...this.viewport, width, height }, 0, 0);
+    Object.assign(this.viewport, resized);
     // Paths are built in world space (projected units), so they are valid for
     // every viewport -- a resize only changes fit-to-window scale and the
     // canvas's backing size, neither of which the cache depends on. It is
-    // cleared on a level switch instead (a later task), not here.
+    // cleared on a level switch instead, in setVersions below.
   }
 
   setViewport(v: Viewport): void {
     Object.assign(this.viewport, v);
+  }
+
+  /**
+   * Swaps in a finer (or coarser -- never happens in practice, but nothing
+   * here assumes otherwise) detail level's geometry. Only the geometry
+   * source and the path cache change: `areaOf`, `knownPolityIds`,
+   * `aggregateIds` and `aggregateParents` are built from `rows`, and every
+   * detail level's `rows` are byte-identical (verified against
+   * fixtures/dist: only `coordScale` and vertex values differ across
+   * versions.0/1/2.json) -- rebuilding them here would be wasted work, not
+   * a correctness fix.
+   *
+   * The path cache must be cleared, though: a cached Path2D was built at the
+   * old artifact's `coordScale`, and drawing it against the new one's scale
+   * (1e5 vs 1e9, coarse to full) would render a map orders of magnitude too
+   * small.
+   */
+  setVersions(artifact: VersionsArtifact): void {
+    this.versions = artifact;
+    this.paths.clear();
+  }
+
+  /** Swaps in a finer land basemap. Mirrors setVersions for the one path it caches. */
+  setLand(artifact: LandArtifact): void {
+    this.land = artifact;
+    this.landPath = null;
   }
 
   draw(frame: Frame): void {

@@ -75,3 +75,18 @@ export async function fetchVersions(level: DetailLevel, base = "."): Promise<Ver
   assertSchema(name, artifact.schemaVersion);
   return artifact;
 }
+
+/**
+ * Fetches the mid land basemap (954 KB in the live dist, cheap next to the
+ * versions artifacts). The pipeline emits only `land.0` and `land.1` -- see
+ * `landLevelFor` in `../render/level` -- so "mid" is as fine as this ever
+ * gets and there is no `DetailLevel` parameter to take.
+ */
+export async function fetchLand(level: "coarse" | "mid", base = "."): Promise<LandArtifact> {
+  const name = `land.${LEVEL_INDEX[level]}.json`;
+  const res = await fetch(`${base}/${name}`, { priority: "low" } as RequestInit);
+  if (!res.ok) throw new Error(`${name}: ${res.status} ${res.statusText}`);
+  const artifact = (await res.json()) as LandArtifact;
+  assertSchema(name, artifact.schemaVersion);
+  return artifact;
+}

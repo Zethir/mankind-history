@@ -177,18 +177,47 @@ const WHEEL_PAGE_PX = 800;
 const WHEEL_MAX_STEP = Math.log(4);
 
 /**
+ * How much more zoom a pinch's deltaY is worth than a scroll's.
+ *
+ * A trackpad pinch does not arrive as its own event type: the OS synthesises
+ * a wheel event with `ctrlKey` set, and the deltaY it carries is on a much
+ * smaller scale than a two-finger slide's for the same physical finger
+ * travel. With one shared sensitivity the two gestures therefore zoom by
+ * visibly different amounts, which is what the owner reported.
+ *
+ * `ctrlKey` is an exact signal for pinch, unlike telling a two-finger slide
+ * from a mouse wheel, which has no reliable flag and can only be guessed at
+ * from delta magnitudes -- a guess that would make a real mouse wheel behave
+ * wrongly when it misfires. So the pinch path is separated and the scroll
+ * path is left to cover both slide and wheel.
+ *
+ * 10 is a starting point, not a measurement: the ratio depends on the
+ * trackpad and the OS, and there is no device here to measure it against.
+ * It is one constant, and tuning it is the intended way to adjust pinch
+ * feel without touching scroll.
+ */
+const PINCH_ZOOM_MULTIPLIER = 10;
+
+/**
  * The zoom factor one wheel event should apply, normalised across the three
  * `deltaMode` units and clamped so no single event can zoom more than 4x.
  * Separated from the DOM listener in `ui/chrome.ts` so the arithmetic is
  * testable under `environment: "node"` without a DOM.
  *
+ * `pinch` is the event's `ctrlKey`: true for a trackpad pinch, false for a
+ * two-finger slide or a mouse wheel. The clamp applies to both paths, so a
+ * pinch cannot outrun it either.
+ *
  * deltaY is positive when scrolling down/away, which zooms out, hence the
  * negation.
  */
-export function wheelZoomFactor(deltaY: number, deltaMode = 0): number {
+export function wheelZoomFactor(deltaY: number, deltaMode = 0, pinch = false): number {
   if (!Number.isFinite(deltaY)) return 1;
   const px =
     deltaMode === 1 ? deltaY * WHEEL_LINE_PX : deltaMode === 2 ? deltaY * WHEEL_PAGE_PX : deltaY;
-  const step = -px * WHEEL_ZOOM_SENSITIVITY;
+  const sensitivity = pinch
+    ? WHEEL_ZOOM_SENSITIVITY * PINCH_ZOOM_MULTIPLIER
+    : WHEEL_ZOOM_SENSITIVITY;
+  const step = -px * sensitivity;
   return Math.exp(Math.min(Math.max(step, -WHEEL_MAX_STEP), WHEEL_MAX_STEP));
 }

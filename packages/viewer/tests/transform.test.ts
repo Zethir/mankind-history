@@ -314,3 +314,35 @@ describe("wheelZoomFactor", () => {
     expect(wheelZoomFactor(Number.POSITIVE_INFINITY)).toBe(1);
   });
 });
+
+describe("wheelZoomFactor: trackpad pinch", () => {
+  // A trackpad pinch arrives as a wheel event with ctrlKey set, carrying a
+  // much smaller deltaY than a two-finger slide does for the same physical
+  // finger travel. Sharing one sensitivity made the two gestures zoom by
+  // visibly different amounts, which is what the owner reported.
+  it("zooms a pinch further than a slide of the same deltaY", () => {
+    // Would fail at 1.0 if the pinch flag were ignored, which is the bug.
+    const slide = Math.log(wheelZoomFactor(-10, 0, false));
+    const pinch = Math.log(wheelZoomFactor(-10, 0, true));
+    expect(pinch / slide).toBeCloseTo(10, 10);
+  });
+
+  it("leaves the scroll path untouched", () => {
+    // Pins that adding pinch did not perturb the sensitivity the owner
+    // already signed off on: still 1.49x for a standard mouse notch.
+    expect(wheelZoomFactor(-100, 0, false)).toBeCloseTo(1.4918, 3);
+    expect(wheelZoomFactor(-100)).toBe(wheelZoomFactor(-100, 0, false));
+  });
+
+  it("is symmetric under pinch too", () => {
+    expect(wheelZoomFactor(-10, 0, true) * wheelZoomFactor(10, 0, true)).toBeCloseTo(1, 10);
+  });
+
+  it("clamps a pinch to the same factor of four", () => {
+    // The pinch multiplier reaches the clamp 10x sooner than scroll does, so
+    // this is the path most likely to hit it. Without the clamp on the pinch
+    // branch, -1000 would be exp(40).
+    expect(wheelZoomFactor(-1000, 0, true)).toBeCloseTo(4, 10);
+    expect(wheelZoomFactor(1000, 0, true)).toBeCloseTo(0.25, 10);
+  });
+});

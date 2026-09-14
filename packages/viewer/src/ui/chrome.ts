@@ -124,7 +124,7 @@ export class Chrome {
         const rect = canvas.getBoundingClientRect();
         const sx = event.clientX - rect.left;
         const sy = event.clientY - rect.top;
-        const factor = wheelZoomFactor(event.deltaY, event.deltaMode);
+        const factor = wheelZoomFactor(event.deltaY, event.deltaMode, event.ctrlKey);
         renderer.setViewport(zoomAt(renderer.viewport, factor, sx, sy));
       },
       { passive: false },

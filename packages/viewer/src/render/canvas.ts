@@ -50,9 +50,12 @@ const POLITY_OUTLINE_WIDTH = 0.75;
  * edge") reads from the ratio between the two rather than from either one's
  * absolute weight. The owner called a 3px stroke (this project's very first
  * attempt) "super thick"; 1.5px against a 0.75px ordinary seam is
- * perceptibly heavier without being thick in its own right. Not judged by a
- * human watching the map yet, same caveat every stroke-weight choice in this
- * project has shipped with.
+ * perceptibly heavier without being thick in its own right.
+ *
+ * Judged and accepted on the deployed map at the close of Milestone 2, after
+ * the owner had flagged it as possibly still slightly thick in Milestone 1.
+ * It is no longer an untested guess, so do not re-derive it from the ratio
+ * argument above: that argument is why 1.5 was proposed, not why it stands.
  */
 const AGGREGATE_OUTLINE_WIDTH = 1.5;
 

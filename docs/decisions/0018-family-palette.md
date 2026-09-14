@@ -226,8 +226,13 @@ declination doing most of that work in the fill now, the stroke only needs
 to be *perceptibly* heavier than the ordinary 1px per-polity seam, not
 dominant. 1.5px was chosen as the smallest step that stays visually distinct
 from 1px at typical screen density without competing with the family-shaded
-fills underneath it; this has not been judged by a human watching the map,
-same caveat decision 0016 closed on.
+fills underneath it.
+
+*Amended at the close of Milestone 2:* this has now been judged by a human
+watching the deployed map, and 1.5px stands. The owner had flagged it in
+Milestone 1 as possibly still slightly thick and carried it forward as an
+open item; on review it was accepted unchanged. The caveat this paragraph
+originally closed on is discharged.
 
 ### Ground tones
 

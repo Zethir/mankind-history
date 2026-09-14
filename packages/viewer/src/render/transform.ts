@@ -22,10 +22,7 @@ export interface Viewport {
 export const MAX_ZOOM_FACTOR = 64;
 
 export function fitScale(width: number, height: number): number {
-  return Math.min(
-    width / (WORLD_HALF_WIDTH * 2),
-    height / (WORLD_HALF_HEIGHT * 2),
-  );
+  return Math.min(width / (WORLD_HALF_WIDTH * 2), height / (WORLD_HALF_HEIGHT * 2));
 }
 
 /**
@@ -48,12 +45,7 @@ export function fitWorld(width: number, height: number): Viewport {
 }
 
 /** Scaled-integer projected coordinates to screen pixels. Y is flipped: north is up. */
-export function toScreen(
-  v: Viewport,
-  x: number,
-  y: number,
-  coordScale: number,
-): [number, number] {
+export function toScreen(v: Viewport, x: number, y: number, coordScale: number): [number, number] {
   return [
     v.width / 2 + (x / coordScale - v.centreX) * v.scale,
     v.height / 2 - (y / coordScale - v.centreY) * v.scale,
@@ -118,17 +110,9 @@ function clamp(v: Viewport): Viewport {
  * fixed. Anchoring at the cursor is what makes zoom feel controlled; anchoring
  * at the centre makes the map slide away from wherever you are looking.
  */
-export function zoomAt(
-  v: Viewport,
-  factor: number,
-  screenX: number,
-  screenY: number,
-): Viewport {
+export function zoomAt(v: Viewport, factor: number, screenX: number, screenY: number): Viewport {
   const min = fitScale(v.width, v.height);
-  const scale = Math.min(
-    Math.max(v.scale * factor, min),
-    min * MAX_ZOOM_FACTOR,
-  );
+  const scale = Math.min(Math.max(v.scale * factor, min), min * MAX_ZOOM_FACTOR);
   // The world point under the cursor, before and after, must agree.
   const wx = v.centreX + (screenX - v.width / 2) / v.scale;
   const wy = v.centreY - (screenY - v.height / 2) / v.scale;
@@ -142,11 +126,7 @@ export function zoomAt(
 }
 
 /** Drag the map by a screen distance. */
-export function panBy(
-  v: Viewport,
-  dxScreen: number,
-  dyScreen: number,
-): Viewport {
+export function panBy(v: Viewport, dxScreen: number, dyScreen: number): Viewport {
   return clamp({
     width: v.width,
     height: v.height,
@@ -167,12 +147,7 @@ export function panBy(
 export function viewportBbox(v: Viewport): [number, number, number, number] {
   const halfW = v.width / 2 / v.scale;
   const halfH = v.height / 2 / v.scale;
-  return [
-    v.centreX - halfW,
-    v.centreY - halfH,
-    v.centreX + halfW,
-    v.centreY + halfH,
-  ];
+  return [v.centreX - halfW, v.centreY - halfH, v.centreX + halfW, v.centreY + halfH];
 }
 
 /**
@@ -242,18 +217,10 @@ const PINCH_ZOOM_MULTIPLIER = 5;
  * deltaY is positive when scrolling down/away, which zooms out, hence the
  * negation.
  */
-export function wheelZoomFactor(
-  deltaY: number,
-  deltaMode = 0,
-  pinch = false,
-): number {
+export function wheelZoomFactor(deltaY: number, deltaMode = 0, pinch = false): number {
   if (!Number.isFinite(deltaY)) return 1;
   const px =
-    deltaMode === 1
-      ? deltaY * WHEEL_LINE_PX
-      : deltaMode === 2
-        ? deltaY * WHEEL_PAGE_PX
-        : deltaY;
+    deltaMode === 1 ? deltaY * WHEEL_LINE_PX : deltaMode === 2 ? deltaY * WHEEL_PAGE_PX : deltaY;
   const sensitivity = pinch
     ? WHEEL_ZOOM_SENSITIVITY * PINCH_ZOOM_MULTIPLIER
     : WHEEL_ZOOM_SENSITIVITY;

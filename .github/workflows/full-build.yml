@@ -16,6 +16,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm fetch:sources
       - run: pnpm build
+      - name: Border displacement stays under one screen pixel at p99 (decision 0020)
+        run: pnpm displacement
       - name: Report artifact sizes and enforce the 8 MB coarse budget
         run: |
           node -e "

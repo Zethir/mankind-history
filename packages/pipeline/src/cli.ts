@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ChangesArtifact, LevelName } from "@history/model";
+import { type ChangesArtifact, DISPLACEMENT_REFERENCE_SCALE, type LevelName } from "@history/model";
 import { readArtifact } from "@history/model/artifact";
 import { build, loadAliases, loadOverlaps } from "./build";
 import { fetchSource } from "./fetch/download";
@@ -247,15 +247,26 @@ function runHistogram(): void {
 }
 
 /**
- * Fit-to-window scale measured for the Milestone 2 viewport, 1400x900 --
- * see docs/phase-2-milestone-2-design.md. Not PX_PER_UNIT (canon.ts), which
- * is a provisional per-level guess consumed by the acceptance criterion; this
- * is the real figure the design doc's thresholds are set against.
+ * Screen pixels per projected unit at fit-to-window, 1400x900 -- see
+ * docs/phase-2-milestone-2-design.md and decision 0020. Not a guess:
+ * `fitScale(1400, 900)` in `packages/viewer/src/render/transform.ts`, mirrored
+ * in `@history/model` as `DISPLACEMENT_REFERENCE_SCALE` so pipeline and
+ * viewer share the one figure the acceptance criterion is measured against.
  */
-const FIT_TO_WINDOW_PX_PER_UNIT = 258.6;
+const FIT_TO_WINDOW_PX_PER_UNIT = DISPLACEMENT_REFERENCE_SCALE;
 
+/**
+ * Runs the border-displacement measurement and also enforces the acceptance
+ * criterion decision 0020 replaced: at `DISPLACEMENT_REFERENCE_SCALE`, each
+ * level's p99 displacement across its shared arcs must stay under one screen
+ * pixel. `pnpm test` cannot check this -- the fixture's 620 shared arcs are
+ * far too thin to characterise a percentile -- so the full build's CI
+ * workflow runs this command and treats a nonzero exit as a failed build.
+ */
 function runDisplacement(): void {
   const distDir = option("dist", "dist");
+  const onePixelInUnits = 1 / DISPLACEMENT_REFERENCE_SCALE;
+  let failed = false;
 
   for (const level of ["coarse", "mid"] as const satisfies readonly Level[]) {
     const { arcsConsidered, identical, droppedArcs, displacements } = measureDisplacement(
@@ -264,6 +275,7 @@ function runDisplacement(): void {
     );
     const displaced = displacements.length;
     const max = displaced > 0 ? (displacements[displaced - 1] as number) : 0;
+    const p99 = percentile(displacements, 0.99);
     const fmt = (units: number) =>
       `${units.toFixed(6)} units / ${(units * FIT_TO_WINDOW_PX_PER_UNIT).toFixed(3)} px`;
 
@@ -275,10 +287,27 @@ function runDisplacement(): void {
     console.log(`    p50 ${fmt(percentile(displacements, 0.5))}`);
     console.log(`    p90 ${fmt(percentile(displacements, 0.9))}`);
     console.log(`    p95 ${fmt(percentile(displacements, 0.95))}`);
-    console.log(`    p99 ${fmt(percentile(displacements, 0.99))}`);
+    console.log(`    p99 ${fmt(p99)}`);
     console.log(`    max ${fmt(max)}`);
+
+    if (p99 >= onePixelInUnits) {
+      failed = true;
+      console.error(
+        `  ${level}: p99 displacement ${(p99 * DISPLACEMENT_REFERENCE_SCALE).toFixed(3)} px ` +
+          `is at or over the one-pixel criterion at ${DISPLACEMENT_REFERENCE_SCALE} px/unit ` +
+          "(decision 0020).",
+      );
+    }
   }
   console.log("");
+
+  if (failed) {
+    console.error(
+      "Border-displacement acceptance criterion failed -- see " +
+        "docs/decisions/0020-percentile-displacement.md",
+    );
+    process.exit(1);
+  }
 }
 
 function runSpacing(): void {

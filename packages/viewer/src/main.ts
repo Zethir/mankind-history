@@ -54,12 +54,13 @@ async function start(): Promise<void> {
   // request here. It is swapped in as soon as its own fetch resolves,
   // independently of the versions level: land.1.json settles long before
   // versions.1/2.json (47/77 MB) do, and there is no reason to make the
-  // basemap wait on a transfer it has nothing to do with. landLevelFor
-  // (render/level.ts) still answers "is mid as fine as land ever gets" --
-  // it has no say in when this swap happens. A failed fetch is logged and
-  // otherwise ignored: the coarse basemap the renderer already has keeps
-  // drawing, with no retry, per the requirement that a land-fetch failure
-  // must not break the frame loop.
+  // basemap wait on a transfer it has nothing to do with. `fetchLand`'s own
+  // `level: "coarse" | "mid"` parameter type (data/artifacts.ts) is what
+  // answers "is mid as fine as land ever gets" -- there is no third value to
+  // pass, so it has no say in when this swap happens. A failed fetch is
+  // logged and otherwise ignored: the coarse basemap the renderer already
+  // has keeps drawing, with no retry, per the requirement that a land-fetch
+  // failure must not break the frame loop.
   let midLand: Awaited<ReturnType<typeof fetchLand>> | null = null;
   let midLandRequested = false;
   let midLandApplied = false;

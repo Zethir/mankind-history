@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   type ChangesArtifact,
   COORD_SCALE,
+  DISPLACEMENT_REFERENCE_SCALE,
   equalEarth,
   equalEarthInverse,
   type LandArtifact,
@@ -12,7 +13,6 @@ import {
   type ManifestArtifact,
   type PolitiesArtifact,
   type Polygon,
-  PX_PER_UNIT,
   type Version,
   type VersionsArtifact,
 } from "@history/model";
@@ -21,6 +21,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { build, loadAliases, loadOverlaps } from "../src/build";
 import { nextChangeAfter, nextChangeBruteForce } from "../src/stages/change-index";
 import { measureDisplacement } from "../src/stages/displacement";
+import { percentile } from "../src/stages/spacing";
 
 const SCALE = COORD_SCALE.full;
 const FIXTURES = "fixtures";
@@ -399,9 +400,23 @@ describe("build", () => {
 });
 
 describe("simplification", () => {
-  it("no pair of previously-adjacent polygons has gained a gap wider than one screen pixel", () => {
-    // THE CRITERION. docs/phase-1-importer.md states it as a one-pixel bound
-    // on the gap between polygons that shared an edge before simplification.
+  it("at the displacement reference scale, each level's p99 border displacement stays under one screen pixel", () => {
+    // THE CRITERION (decision 0020). docs/phase-1-importer.md originally
+    // stated a one-pixel bound on the MAXIMUM displacement, evaluated at each
+    // level's own PX_PER_UNIT guess (259 coarse / 2069 mid). Milestone 2 Task
+    // 1 measured that on the real dataset and found the maximum cannot
+    // discriminate the levels at all: coarse's and mid's worst displacement
+    // is the exact same seven world-space events, ~0.0029 projected units
+    // each. A max-based rule at mismatched per-level scales made mid look
+    // eight times worse for an identical underlying event. See 0020 for the
+    // full argument, including why a criterion evaluated at maximum zoom was
+    // rejected too.
+    //
+    // The replacement measures p99 displacement across shared arcs at ONE
+    // real, shared reference scale -- DISPLACEMENT_REFERENCE_SCALE
+    // (`fitScale(1400, 900)`, canon.ts), not a per-level guess. Levels no
+    // longer switch on zoom (0020, "Levels are a bandwidth difference, not a
+    // fidelity one"), so there is no per-level scale left to measure at.
     //
     // WHY SIX EARLIER FORMULATIONS FAILED. Each of them asked "what surviving
     // geometry is nearest this dropped point?", which has no removal-free
@@ -434,31 +449,35 @@ describe("simplification", () => {
     // measured. Arcs shorter than three points are skipped, so an arc cannot
     // be trivially identical.
     //
-    // MEASURED, on the real dataset (13,380 versions), both levels seeing the
-    // same 22,215 shared arcs:
-    //   coarse  21,058 identical (94.8%)  1,150 a side dropped  7 displaced  worst 0.759 px
-    //   mid     21,508 identical (96.8%)    700 a side dropped  7 displaced  worst 6.066 px
+    // MEASURED, on the real dataset (13,380 versions, via
+    // `pnpm build && pnpm displacement`), both levels seeing the same 22,215
+    // shared arcs:
+    //   coarse  21,058 identical (94.8%)  1,150 a side dropped  7 displaced  p99 0.7583 px
+    //   mid     21,508 identical (96.8%)    700 a side dropped  7 displaced  p99 0.7583 px
     // The seven displacements are the same seven world-space events at both
-    // levels, ~0.0029 projected units, about 22 km. Coarse therefore meets the
-    // criterion as the spec states it. Mid exceeds it only because
-    // PX_PER_UNIT.mid makes mid's pixel eight times smaller for an identical
-    // world-space displacement -- and PX_PER_UNIT is PROVISIONAL, a guess at a
-    // viewport that does not exist yet (see canon.ts). Mid is therefore bounded
-    // in WORLD units, at the coarse level's pixel size, rather than pretended
-    // to pass. Phase 2 should revisit once PX_PER_UNIT holds real figures.
+    // levels, ~0.0029 projected units, about 22 km -- and because only 7 of
+    // 22,215 arcs are displaced at all, p90 through the max collapse onto
+    // that same single largest value at both levels (floor(0.9 * 7) through
+    // floor(0.99 * 7) are all index 6, the top of a 7-member list); p50 is
+    // the only percentile that differs between coarse and mid, by 0.06%. Both
+    // levels' p99 is 0.7583 px at DISPLACEMENT_REFERENCE_SCALE -- under one
+    // pixel, so both pass -- see docs/phase-2-milestone-2-design.md for the
+    // full table.
     //
     // This test runs on the committed fixture, not on the real dataset, and
-    // the fixture exercises the arc population thinly: 620 shared arcs against
-    // the real 22,215, with a much lower identical fraction because a small
-    // carve loses proportionally more sub-polygons. The floor asserted below
-    // is sized for the fixture; the table above is the real signal.
+    // the fixture exercises the arc population far too thinly to characterise
+    // a percentile: 620 shared arcs against the real 22,215. The full build's
+    // CI workflow (`pnpm displacement` in .github/workflows/full-build.yml)
+    // is what actually enforces this criterion at scale; this test exercises
+    // the same code path against the fixture so a change to the measurement
+    // itself is still caught here.
     //
     // The regression this criterion exists to guard against -- per-group
     // simplification cracking a shared border into hairline gaps -- is
     // separately gated by the noisy-shared-boundary test in
     // packages/pipeline/tests/simplify.test.ts, empirically verified to fail
     // when simplification is rewritten to one mapshaper call per group.
-    const coarsePixelInProjectedUnits = 1 / PX_PER_UNIT.coarse;
+    const onePixelInProjectedUnits = 1 / DISPLACEMENT_REFERENCE_SCALE;
 
     for (const level of ["coarse", "mid"] as const) {
       const { arcsConsidered, identical, droppedArcs, displacements } = measureDisplacement(
@@ -466,28 +485,17 @@ describe("simplification", () => {
         level,
       );
       const displaced = displacements.length;
-      const worstDisplacement = displaced > 0 ? (displacements[displaced - 1] as number) : 0;
-      const onePixelInProjectedUnits = 1 / PX_PER_UNIT[level];
+      const p99 = percentile(displacements, 0.99);
 
       console.log(
         `  ${level}: ${arcsConsidered} shared arcs, ${identical} identical ` +
           `(${((identical / arcsConsidered) * 100).toFixed(1)}% of arcs), ` +
           `${droppedArcs} with a side dropping the arc, ${displaced} displaced, ` +
-          `worst displacement ${(worstDisplacement / onePixelInProjectedUnits).toFixed(3)} px ` +
-          `(${worstDisplacement.toFixed(6)} projected units)`,
+          `p99 displacement ${(p99 / onePixelInProjectedUnits).toFixed(3)} px ` +
+          `(${p99.toFixed(6)} projected units)`,
       );
 
-      // Coarse meets the criterion as the spec states it.
-      // Mid exceeds it on 7 of 22,225 arcs, all the same world-space events
-      // (~0.0029 projected units, about 22 km). Mid's pixel is 8x smaller for
-      // an identical displacement, and PX_PER_UNIT is PROVISIONAL -- a guess at
-      // a viewport that does not exist yet. So mid is bounded in WORLD units,
-      // at the coarse level's pixel size, rather than pretended to pass.
-      if (level === "coarse") {
-        expect(worstDisplacement).toBeLessThan(onePixelInProjectedUnits);
-      } else {
-        expect(worstDisplacement).toBeLessThan(coarsePixelInProjectedUnits);
-      }
+      expect(p99).toBeLessThan(onePixelInProjectedUnits);
       // A floor sized for the fixture's 620 arcs, not the real dataset's
       // 22,215: the point is that the population is not quietly empty.
       expect(arcsConsidered).toBeGreaterThan(500);

@@ -78,9 +78,12 @@ export async function fetchVersions(level: DetailLevel, base = "."): Promise<Ver
 
 /**
  * Fetches the mid land basemap (954 KB in the live dist, cheap next to the
- * versions artifacts). The pipeline emits only `land.0` and `land.1` -- see
- * `landLevelFor` in `../render/level` -- so "mid" is as fine as this ever
- * gets and there is no `DetailLevel` parameter to take.
+ * versions artifacts). The pipeline emits only `land.0` and `land.1`, so this
+ * parameter's own type -- `"coarse" | "mid"`, not `DetailLevel` -- is what
+ * now enforces "land never requests a level the pipeline does not emit" at
+ * compile time; there is no `land.2` to ask for and no third value this
+ * parameter can even hold. See docs/architecture.md's Level upgrade section
+ * for why land saturates at mid independently of the political layer.
  */
 export async function fetchLand(level: "coarse" | "mid", base = "."): Promise<LandArtifact> {
   const name = `land.${LEVEL_INDEX[level]}.json`;

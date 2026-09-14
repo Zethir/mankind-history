@@ -26,7 +26,9 @@ describe("measureSpacing", () => {
     // percentiles, just about vertex count.
     const coarse = measureSpacing(FIXTURES, "coarse");
     const full = measureSpacing(FIXTURES, "full");
-    expect(coarse.spacings.length).toBeLessThanOrEqual(full.spacings.length);
+    // Strict: on the fixture these are 8,155 against 20,497, over 2x apart,
+    // so equality would itself be a sign this measurement broke.
+    expect(coarse.spacings.length).toBeLessThan(full.spacings.length);
   });
 });
 

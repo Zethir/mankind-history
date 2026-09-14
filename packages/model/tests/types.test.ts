@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   COORD_SCALE,
+  DISPLACEMENT_REFERENCE_SCALE,
   GRID,
   MAX_SEGMENT_X,
   PROJECTION,
-  PX_PER_UNIT,
   SCHEMA_VERSION,
   WORLD_HALF_HEIGHT,
 } from "../src/canon";
@@ -56,11 +56,9 @@ describe("canonical types", () => {
     expect(GRID.rows).toBe(32);
     // Half the projected world height: y at lat 90.
     expect(WORLD_HALF_HEIGHT).toBeCloseTo(1.31736, 5);
-    // Provisional Phase 2 viewport assumptions -- a 1400px-wide window showing
-    // the whole world at coarse, an eighth of it at mid, a sixty-fourth at full.
-    expect(PX_PER_UNIT.coarse).toBe(259);
-    expect(PX_PER_UNIT.mid).toBe(2069);
-    expect(PX_PER_UNIT.full).toBe(16552);
+    // The real fit-to-window scale (fitScale(1400, 900) in the viewer), not a
+    // guess -- see decision 0020 and canon.ts's comment on this constant.
+    expect(DISPLACEMENT_REFERENCE_SCALE).toBeCloseTo(258.6242, 4);
   });
 
   it("a ChangesArtifact carries a row-major grid of sorted year lists", () => {

@@ -29,8 +29,10 @@ export function fitScale(width: number, height: number): number {
  * Fits the whole projected world into a canvas, preserving aspect and
  * centring. The projected world is 2 * WORLD_HALF_WIDTH units across.
  *
- * `scale` is the real pixels-per-projected-unit figure that canon.ts's
- * PX_PER_UNIT only guessed at. Milestone 2 replaces those constants with it.
+ * `scale` is the real pixels-per-projected-unit figure. At 1400x900 it
+ * measures 258.6242, which `canon.ts` records as `DISPLACEMENT_REFERENCE_SCALE`
+ * -- the fixed scale the border-displacement acceptance criterion is measured
+ * at (decision 0020), not a value this renderer itself consults.
  */
 export function fitWorld(width: number, height: number): Viewport {
   return { width, height, scale: fitScale(width, height), centreX: 0, centreY: 0 };

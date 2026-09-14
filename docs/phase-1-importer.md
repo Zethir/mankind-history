@@ -117,8 +117,14 @@ Runnable checks. "The importer works" is not a criterion.
 **Geometry**
 - Every ring is closed, has ≥4 points, and contains no NaN or infinite values.
 - Un-projecting any coordinate returns the source lon/lat within 1e-6.
-- After simplification, no pair of previously-adjacent polygons has gained a gap
-  wider than one screen pixel at the coarsest zoom that level serves.
+- After simplification, no pair of previously-adjacent polygons has gained a
+  gap wider than one screen pixel. Amended by
+  `docs/decisions/0020-percentile-displacement.md`: measured as each level's
+  p99 border displacement across its shared arcs, at one shared reference
+  scale (`DISPLACEMENT_REFERENCE_SCALE`, `packages/model/src/canon.ts`), not
+  as the maximum at each level's own guessed scale. 0020 records why the
+  maximum could not discriminate coarse from mid and argues against
+  evaluating it at maximum zoom instead.
 - No polygon crosses the antimeridian in projected space.
 
 **Index**

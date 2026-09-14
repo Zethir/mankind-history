@@ -1,4 +1,5 @@
 import type { ChangesArtifact, VersionsArtifact } from "@history/model";
+import { cellRangeFor } from "@history/model";
 import { readArtifact } from "@history/model/artifact";
 import { describe, expect, it } from "vitest";
 import { ChangeYears } from "../src/engine/change-years";
@@ -65,5 +66,24 @@ describe("ChangeYears", () => {
 
   it("treats a null bbox as the whole world", () => {
     expect(cy.nextChangeAfter(-10_000, null)).toBe(cy.nextChangeAfter(-10_000, WORLD));
+  });
+
+  // Regression test for an off-by-one a reviewer found by inspection: mutating
+  // the loop's `x <= x1` to `x < x1` (dropping the last column of every
+  // viewport) still passed the rest of this suite, because the only small-bbox
+  // test above spans two cells that happen to both be empty. This bbox is
+  // chosen against the real fixture (fixtures/dist/changes.json) so that
+  // BOTH the range's last column and its last row are load-bearing:
+  // cellRangeFor(changes.grid, bbox) resolves to x0=30, x1=31, y0=23, y1=24,
+  // and only the single corner cell (31, 24) -- the last column AND the last
+  // row of that range -- carries the years 536/540/546/555. Every other cell
+  // in the range (30,23), (31,23), (30,24) carries only [407, 410, 414, 455,
+  // 458]. So querying just past 458 only finds 536 if the loop visits both
+  // the last column and the last row; dropping either one independently
+  // loses the corner cell and the answer silently becomes null.
+  it("visits the last column and last row of its cell range, not just up to them", () => {
+    const bbox: [number, number, number, number] = [-0.15, 0.6, -0.05, 0.7];
+    expect(cellRangeFor(changes.grid, bbox)).toEqual({ x0: 30, x1: 31, y0: 23, y1: 24 });
+    expect(cy.nextChangeAfter(458, bbox)).toBe(536);
   });
 });

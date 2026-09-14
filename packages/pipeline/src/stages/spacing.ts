@@ -42,8 +42,8 @@ import { readArtifact } from "@history/model/artifact";
  * entirely. There is no threshold to switch on. The viewer instead loads
  * coarse and paints it, then upgrades to mid and then full as they arrive,
  * strictly one-directionally -- see `packages/viewer/src/render/level.ts`
- * (`DetailLevel`, `landLevelFor`) and docs/phase-2-milestone-2-design.md,
- * "Thresholds: what the measurement actually showed". This measurement
+ * (`DetailLevel`) and docs/phase-2-milestone-2-design.md, "Thresholds: what
+ * the measurement actually showed". This measurement
  * stays in the repo because it is the evidence for that decision, not
  * because a threshold still needs it.
  */

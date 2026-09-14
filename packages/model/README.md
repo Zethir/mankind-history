@@ -133,13 +133,14 @@ over projected space (so, because the projection is equal-area, uniform real
 area per cell too). Chosen for query precision rather than size: the whole
 index is 33 KB gzipped after deduplication even at this resolution.
 
-`PX_PER_UNIT` is **provisional**: screen pixels per projected unit at the
-coarsest zoom each detail level is expected to serve, used by the
-no-new-gaps acceptance criterion in `packages/pipeline/tests/acceptance.test.ts`.
-It encodes a Phase 2 viewport assumption - a 1400-pixel-wide window at each
-zoom level - that does not exist yet and should be replaced with the viewer's
-real figures once Phase 2 has them. That criterion measures border displacement
-per shared arc: coarse meets the one-pixel bound, and mid exceeds it on 7 of
-22,215 arcs which are the same world-space events at a pixel this constant
-happens to make eight times smaller - so mid is bounded in world units instead.
-See the no-new-gaps section of `docs/architecture.md`.
+`DISPLACEMENT_REFERENCE_SCALE` is the real, measured screen-pixels-per-
+projected-unit figure the no-new-gaps acceptance criterion in
+`packages/pipeline/tests/acceptance.test.ts` is measured at: 258.6242,
+`fitScale(1400, 900)` in the viewer's `src/render/transform.ts`. It replaced
+a provisional, three-entry `PX_PER_UNIT` that guessed at a 1400px window
+tied to fixed per-level zoom steps - an assumption Phase 2 measured and
+dropped once levels stopped switching on zoom at all. The criterion measures
+p99 border displacement per shared arc, at this one shared scale, for each
+level: both coarse and mid measure 0.7583 px, under the one-pixel bound. See
+decision 0020 and the "Zoom, progressive detail, and viewport-scoped
+playback" and "no-new-gaps" sections of `docs/architecture.md`.

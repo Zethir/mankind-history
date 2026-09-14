@@ -3,7 +3,6 @@ import { bestAvailable, LevelRegistry } from "./data/levels";
 import { Engine } from "./engine/engine";
 import { MapRenderer } from "./render/canvas";
 import type { DetailLevel } from "./render/level";
-import { landLevelFor } from "./render/level";
 import { viewportBbox } from "./render/transform";
 import { Chrome } from "./ui/chrome";
 
@@ -52,12 +51,18 @@ async function start(): Promise<void> {
   // The mid land basemap (954 KB in the live dist) is fetched once, after
   // first paint, same as the progressive versions prefetch chain -- cheap
   // next to the 47 MB versions artifacts, so there is no equivalent staged
-  // request here. A failed fetch is logged and otherwise ignored: the coarse
-  // basemap the renderer already has keeps drawing, per the requirement that
-  // a land-fetch failure must not break the frame loop.
+  // request here. It is swapped in as soon as its own fetch resolves,
+  // independently of the versions level: land.1.json settles long before
+  // versions.1/2.json (47/77 MB) do, and there is no reason to make the
+  // basemap wait on a transfer it has nothing to do with. landLevelFor
+  // (render/level.ts) still answers "is mid as fine as land ever gets" --
+  // it has no say in when this swap happens. A failed fetch is logged and
+  // otherwise ignored: the coarse basemap the renderer already has keeps
+  // drawing, with no retry, per the requirement that a land-fetch failure
+  // must not break the frame loop.
   let midLand: Awaited<ReturnType<typeof fetchLand>> | null = null;
   let midLandRequested = false;
-  let landLevel: "coarse" | "mid" = "coarse";
+  let midLandApplied = false;
   let versionsLevel: DetailLevel = "coarse";
   let firstPaintDone = false;
 
@@ -94,10 +99,12 @@ async function start(): Promise<void> {
           versionsLevel = wantedLevel;
         }
       }
-      const wantedLand = landLevelFor(wantedLevel);
-      if (wantedLand !== landLevel && midLand) {
+      // Independent of wantedLevel: the land basemap upgrades as soon as its
+      // own fetch resolves, not when the (much larger, much slower) versions
+      // level catches up to it.
+      if (midLand && !midLandApplied) {
         renderer.setLand(midLand);
-        landLevel = wantedLand;
+        midLandApplied = true;
       }
 
       renderer.draw(frame);

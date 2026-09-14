@@ -39,19 +39,29 @@ function writeArtifacts(dir: string, files: readonly string[]): void {
 // assertion below would reduce to "ARTIFACT_FILES equals ARTIFACT_FILES" --
 // it could never fail no matter how ARTIFACT_FILES changed. The duplication
 // here is the test: it is what makes a bad ARTIFACT_FILES value (a typo, a
-// dropped entry, or a fifth entry such as "versions.1.json" -- the exact
-// 154 MB file the dist/ vs fixtures/dist correction exists to keep out of
-// the viewer build) show up as a failing assertion instead of passing
-// silently.
+// dropped entry, or an extra one) show up as a failing assertion instead of
+// passing silently.
+//
+// All eight of the pipeline's real dist/ outputs, since Task 9's fix round 1.
+// The viewer's progressive-upgrade chain now fetches every version level and
+// both land levels at runtime (see stage-data-lib.mjs's ARTIFACT_FILES
+// comment), and changes.json was already being fetched by fetchArtifacts, so
+// there is no longer a real pipeline artifact this list excludes -- unlike
+// the old four-file list, which deliberately left versions.1.json and
+// versions.2.json unstaged.
 const EXPECTED_ARTIFACT_FILES = [
+  "changes.json",
   "land.0.json",
+  "land.1.json",
   "manifest.json",
   "polities.json",
   "versions.0.json",
+  "versions.1.json",
+  "versions.2.json",
 ];
 
 describe("ARTIFACT_FILES", () => {
-  it("is exactly the four artifacts the viewer needs, no more, no fewer", () => {
+  it("is exactly the eight artifacts dist/ produces, no more, no fewer", () => {
     expect([...ARTIFACT_FILES].sort()).toEqual(EXPECTED_ARTIFACT_FILES);
   });
 });
@@ -95,9 +105,14 @@ describe("stageFiles", () => {
     const source = tempDir();
     const out = join(tempDir(), "public-data");
     writeArtifacts(source, EXPECTED_ARTIFACT_FILES);
-    // An extra file present in the source dir but never requested -- e.g.
-    // the exact versions.1.json the correction exists to keep out.
-    writeFileSync(join(source, "versions.1.json"), '{"file":"versions.1.json"}', "utf8");
+    // A file sitting in the source directory that was never one of the
+    // pipeline's outputs and is not in ARTIFACT_FILES. Unlike the old
+    // versions.1.json example, every real dist/ artifact is staged now, so
+    // there is no genuine pipeline output left to exclude -- this uses an
+    // arbitrary non-artifact file instead, to prove stageFiles copies
+    // exactly its `files` argument rather than everything it finds in
+    // sourceDir.
+    writeFileSync(join(source, "checksums.txt"), "not a pipeline artifact", "utf8");
 
     stageFiles(source, EXPECTED_ARTIFACT_FILES, out);
 

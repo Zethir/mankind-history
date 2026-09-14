@@ -142,6 +142,10 @@ export class Chrome {
     let lastX = 0;
     let lastY = 0;
     canvas.addEventListener("pointerdown", (event) => {
+      // button 0 is the primary button (left, on a standard mouse). Without
+      // this check, a right-click drag would pan the map and hold pointer
+      // capture while the context menu is trying to open.
+      if (event.button !== 0) return;
       dragging = true;
       lastX = event.clientX;
       lastY = event.clientY;

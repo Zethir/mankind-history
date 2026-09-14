@@ -5,13 +5,34 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 /**
- * The artifacts the viewer needs. Exported so the test suite asserts against
- * the same list stage-data.mjs actually copies -- a typo or an extra entry
- * here is exactly the kind of regression that would silently stage stale or
- * unwanted data (e.g. reintroducing the 154 MB versions.1.json/versions.2.json
- * the correction in vite.config.ts exists to keep out of the build).
+ * Every artifact the pipeline emits into dist/ (see emit.ts). Exported so the
+ * test suite asserts against the same list stage-data.mjs actually copies --
+ * a typo or a dropped entry here is exactly the kind of regression that would
+ * silently 404 one of the viewer's runtime fetches against public-data/.
+ *
+ * This used to be a curated subset of four (polities, versions.0, land.0,
+ * manifest): vite.config.ts's comment explained that dist/ "also carries
+ * versions.1.json and versions.2.json", ~124 MB this milestone never
+ * requested, so they were deliberately left unstaged. That stopped being true
+ * once the viewer's progressive-upgrade chain started fetching every version
+ * level and both land levels live (LevelRegistry in data/levels.ts,
+ * fetchVersions/fetchLand in data/artifacts.ts, wired up from main.ts) --
+ * changes.json has also been fetched by fetchArtifacts since the change-years
+ * work, and was simply missing from this list, breaking `pnpm dev` and the
+ * viewer build outright before any of that ever ran. All eight of the
+ * pipeline's outputs are staged now; there is no longer a real dist/ artifact
+ * this list excludes.
  */
-export const ARTIFACT_FILES = ["polities.json", "versions.0.json", "land.0.json", "manifest.json"];
+export const ARTIFACT_FILES = [
+  "polities.json",
+  "versions.0.json",
+  "versions.1.json",
+  "versions.2.json",
+  "land.0.json",
+  "land.1.json",
+  "changes.json",
+  "manifest.json",
+];
 
 /**
  * Returns the first candidate directory that exists, in order. Candidates are

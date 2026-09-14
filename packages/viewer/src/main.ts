@@ -23,7 +23,7 @@ async function start(): Promise<void> {
     const chromeRoot = app.querySelector<HTMLElement>("#chrome");
     if (!canvas || !chromeRoot) throw new Error("app shell failed to build");
 
-    engine = new Engine(artifacts.versions);
+    engine = new Engine(artifacts.versions, artifacts.changes);
     // A throw here (e.g. canvas.ts failing to get a 2D context) must still
     // land in this catch: outside it, the loading message is already
     // replaced, so an escaped throw leaves a blank page instead of the error

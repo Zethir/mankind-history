@@ -1,27 +1,28 @@
-import type { VersionsArtifact } from "@history/model";
+import type { ChangesArtifact, VersionsArtifact } from "@history/model";
 import { readArtifact } from "@history/model/artifact";
 import { describe, expect, it } from "vitest";
 import { BASE_SPEED } from "../src/engine/constants";
 import { Engine } from "../src/engine/engine";
 
 const artifact = readArtifact<VersionsArtifact>("fixtures/dist/versions.0.json");
+const changes = readArtifact<ChangesArtifact>("fixtures/dist/changes.json");
 
 describe("Engine", () => {
   it("starts paused at the beginning of the range", () => {
-    const engine = new Engine(artifact);
+    const engine = new Engine(artifact, changes);
     expect(engine.playing).toBe(false);
     expect(engine.clock.year).toBe(engine.range[0]);
   });
 
   it("does not advance the year while paused", () => {
-    const engine = new Engine(artifact);
+    const engine = new Engine(artifact, changes);
     const before = engine.clock.year;
     for (let i = 0; i < 100; i++) engine.advance(1 / 60);
     expect(engine.clock.year).toBe(before);
   });
 
   it("advances while playing and stops at the end of the range", () => {
-    const engine = new Engine(artifact);
+    const engine = new Engine(artifact, changes);
     engine.playing = true;
     // 200000 frames at 1/60s is over 55 minutes of wall clock -- comfortably
     // enough to cross the fixture's 2774-year range even at reading speed
@@ -40,7 +41,7 @@ describe("Engine", () => {
   // clears `playing` again (see advance() above), so playback never actually
   // resumes -- a dead Play button once the timeline has played to the end.
   it("restarts from the beginning when played again after reaching the end", () => {
-    const engine = new Engine(artifact);
+    const engine = new Engine(artifact, changes);
     engine.clock.year = engine.range[1] + 1;
     engine.playing = false;
     engine.play();
@@ -55,7 +56,7 @@ describe("Engine", () => {
   });
 
   it("play() does not seek when playback is not already stopped at the end", () => {
-    const engine = new Engine(artifact);
+    const engine = new Engine(artifact, changes);
     engine.clock.year = 100;
     engine.play();
     expect(engine.clock.year).toBe(100);
@@ -70,7 +71,7 @@ describe("Engine", () => {
   // widening a version's fade to tens of years and holding it there
   // indefinitely. `engine.pause()` now calls `Clock.resetSpeed()`.
   it("resets speed to reading speed when paused mid-sprint", () => {
-    const engine = new Engine(artifact);
+    const engine = new Engine(artifact, changes);
     engine.clock.setAuto();
     // Just past where this fixture's Roman Republic rows end; the next
     // change is 407, a gap wide enough for Auto to sprint well past
@@ -88,7 +89,7 @@ describe("Engine", () => {
   });
 
   it("resets speed to reading speed after a seek mid-sprint", () => {
-    const engine = new Engine(artifact);
+    const engine = new Engine(artifact, changes);
     engine.clock.setAuto();
     engine.clock.year = -300;
     engine.playing = true;
@@ -100,7 +101,7 @@ describe("Engine", () => {
   });
 
   it("seeks to an exact year and reports the frame there", () => {
-    const engine = new Engine(artifact);
+    const engine = new Engine(artifact, changes);
     // Not year 0: this fixture's real coverage has a gap from -301 (end of the
     // Roman Republic rows) to 407 (start of the Visigoths/Western Roman
     // Empire rows), so year 0 genuinely has zero active versions -- correct
@@ -128,7 +129,7 @@ describe("Engine", () => {
   // the caller-facing contract still holds: the year keeps moving forward and
   // the speed never drops below reading speed.
   it("stays sane when handed a stale change cursor (nextChange <= year)", () => {
-    const engine = new Engine(artifact);
+    const engine = new Engine(artifact, changes);
     engine.clock.setAuto();
 
     const beforeEqual = engine.clock.year;
@@ -177,7 +178,7 @@ describe("Engine", () => {
   //            papered over, so one frame pinning "the engine returns nothing
   //            where the data says nothing" belongs in this set on purpose.
   it("produces stable frames at fixed years", () => {
-    const engine = new Engine(artifact);
+    const engine = new Engine(artifact, changes);
     for (const year of [-649, -322, 410.5, 764, 1938.5, 1000]) {
       const frame = engine.seek(year);
       const summary = {
@@ -191,5 +192,47 @@ describe("Engine", () => {
       };
       expect(summary).toMatchSnapshot(`year ${year}`);
     }
+  });
+
+  // A bbox inside grid cell (0, 0) -- confirmed empty in the fixture's
+  // changes.json, i.e. no version's geometry has a polygon bbox there -- so
+  // ChangeYears.nextChangeAfter returns null for it regardless of year.
+  const EMPTY_BBOX: [number, number, number, number] = [
+    changes.grid.bounds[0] + 0.01,
+    changes.grid.bounds[1] + 0.01,
+    changes.grid.bounds[0] + 0.02,
+    changes.grid.bounds[1] + 0.02,
+  ];
+
+  // Exercises setViewportBbox end-to-end through advance(): with the world in
+  // view, Auto sprints ahead of a distant change; scoping the same clock
+  // state to a bbox with nothing in it makes the engine see no upcoming
+  // change at all, so it must fall back to reading speed. If advance() built
+  // its own bbox instead of using the one setViewportBbox stored -- or never
+  // read it -- both queries would see the same (world) answer and this would
+  // fail.
+  it("setViewportBbox scopes the change query advance() uses", () => {
+    const engine = new Engine(artifact, changes);
+    engine.clock.setAuto();
+    // Same gap used elsewhere in this file: -301 (end of Roman Republic rows)
+    // to 407 (start of Visigoths/Western Roman Empire rows) is wide enough
+    // for Auto to sprint well past BASE_SPEED against the whole world.
+    engine.clock.year = -300;
+    engine.playing = true;
+    for (let i = 0; i < 90; i++) engine.advance(1 / 60);
+    expect(engine.clock.speed).toBeGreaterThan(BASE_SPEED * 5);
+
+    engine.setViewportBbox(EMPTY_BBOX);
+    const frame = engine.advance(1 / 60);
+    // Deceleration is immediate in Clock.tick (see clock.ts), so one frame
+    // after scoping to an empty bbox is enough to observe the drop.
+    expect(frame.speed).toBe(BASE_SPEED);
+
+    engine.setViewportBbox(null);
+    const worldFrame = engine.advance(1 / 60);
+    // Restoring the world view puts a change back within reach, so speed
+    // rises above reading speed again -- confirms the drop above was really
+    // caused by the bbox, not by something else resetting speed in between.
+    expect(worldFrame.speed).toBeGreaterThan(BASE_SPEED);
   });
 });

@@ -1,4 +1,4 @@
-import type { VersionsArtifact } from "@history/model";
+import type { ChangesArtifact, VersionsArtifact } from "@history/model";
 import { ChangeYears } from "./change-years";
 import { Clock } from "./clock";
 import type { Frame } from "./frame";
@@ -14,17 +14,29 @@ export class Engine {
   playing = false;
   private readonly timeline: Timeline;
   private readonly changes: ChangeYears;
+  /**
+   * Plain projected-unit numbers, computed in `render/` and handed down via
+   * `setViewportBbox` -- never a `Viewport` object, never a DOM event. The
+   * engine stays free of rendering types; this is the only shape it knows
+   * about a view onto the map.
+   */
+  private viewportBbox: [number, number, number, number] | null = null;
 
-  constructor(artifact: VersionsArtifact) {
-    this.timeline = new Timeline(artifact);
-    this.changes = new ChangeYears(artifact.rows);
+  constructor(versions: VersionsArtifact, changes: ChangesArtifact) {
+    this.timeline = new Timeline(versions);
+    this.changes = new ChangeYears(changes);
     this.range = this.timeline.range;
     this.clock = new Clock(this.range[0]);
   }
 
+  /** A null bbox means the whole world -- the zoomed-out default. */
+  setViewportBbox(bbox: [number, number, number, number] | null): void {
+    this.viewportBbox = bbox;
+  }
+
   advance(dt: number): Frame {
     if (this.playing) {
-      this.clock.tick(dt, this.changes.nextChangeAfter(this.clock.year));
+      this.clock.tick(dt, this.changes.nextChangeAfter(this.clock.year, this.viewportBbox));
       if (this.clock.year >= this.range[1] + 1) {
         this.clock.year = this.range[1] + 1;
         this.pause();

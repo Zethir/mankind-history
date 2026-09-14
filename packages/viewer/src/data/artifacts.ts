@@ -1,16 +1,25 @@
-import type { LandArtifact, PolitiesArtifact, VersionsArtifact } from "@history/model";
+import type {
+  ChangesArtifact,
+  LandArtifact,
+  PolitiesArtifact,
+  VersionsArtifact,
+} from "@history/model";
 import { LEVEL_INDEX, SCHEMA_VERSION } from "@history/model";
 import type { DetailLevel } from "../render/level";
 
 /**
- * The three artifacts M1 needs. `changes.json` is deliberately absent: its
- * cells mix fromYear and toYear values indistinguishably, so the event years
- * playback needs cannot be recovered from it. See src/engine/change-years.ts.
+ * The four artifacts the viewer needs. `changes.json` came back in Milestone
+ * 2: Milestone 1 left it unfetched because its cells mixed fromYear and
+ * toYear values indistinguishably, so the event years playback needed could
+ * not be recovered from it. The pipeline fix bucketing toYear + 1 (see
+ * src/engine/change-years.ts) made the index usable for that, and Milestone
+ * 2's viewport-scoped queries are exactly what the index is for.
  */
 export interface Artifacts {
   polities: PolitiesArtifact;
   versions: VersionsArtifact;
   land: LandArtifact;
+  changes: ChangesArtifact;
 }
 
 export function assertSchema(file: string, schemaVersion: number): void {
@@ -25,6 +34,7 @@ export function validateArtifacts(a: Artifacts): Artifacts {
   assertSchema("polities.json", a.polities.schemaVersion);
   assertSchema("versions.0.json", a.versions.schemaVersion);
   assertSchema("land.0.json", a.land.schemaVersion);
+  assertSchema("changes.json", a.changes.schemaVersion);
   return a;
 }
 
@@ -39,12 +49,13 @@ export async function fetchArtifacts(base = "."): Promise<Artifacts> {
     if (!res.ok) throw new Error(`${name}: ${res.status} ${res.statusText}`);
     return (await res.json()) as T;
   };
-  const [polities, versions, land] = await Promise.all([
+  const [polities, versions, land, changes] = await Promise.all([
     get<PolitiesArtifact>("polities.json"),
     get<VersionsArtifact>("versions.0.json"),
     get<LandArtifact>("land.0.json"),
+    get<ChangesArtifact>("changes.json"),
   ]);
-  return validateArtifacts({ polities, versions, land });
+  return validateArtifacts({ polities, versions, land, changes });
 }
 
 /**

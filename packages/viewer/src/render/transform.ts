@@ -143,3 +143,52 @@ export function viewportBbox(v: Viewport): [number, number, number, number] {
   const halfH = v.height / 2 / v.scale;
   return [v.centreX - halfW, v.centreY - halfH, v.centreX + halfW, v.centreY + halfH];
 }
+
+/**
+ * Natural-log zoom units per pixel of wheel deltaY. A wheel notch on a
+ * standard mouse reports about 100 px of deltaY, so at 0.004 one notch
+ * multiplies scale by exp(0.4) = 1.49 and the full fit-to-MAX_ZOOM_FACTOR
+ * range takes ln(64) / 0.4 = about 10 notches.
+ *
+ * It was 0.0015, which took about 28 notches to cross the same range and the
+ * owner found frustrating to interact with. Exponential rather than additive
+ * so a notch is the same proportional step at every zoom level, which is what
+ * makes zoom feel even rather than crawling when close and lurching when far.
+ */
+const WHEEL_ZOOM_SENSITIVITY = 0.004;
+
+/**
+ * Wheel events do not all report deltaY in pixels. `deltaMode` 1 means lines
+ * and 2 means pages, and a browser reporting lines sends about 3 per notch
+ * rather than about 100 -- so treating its deltaY as pixels makes the wheel
+ * appear almost dead. These convert to the pixel scale the sensitivity is
+ * calibrated against.
+ */
+const WHEEL_LINE_PX = 16;
+const WHEEL_PAGE_PX = 800;
+
+/**
+ * The most a single wheel event may zoom, as a natural-log magnitude:
+ * ln(4), so one event can never do more than a factor of four. Some input
+ * stacks emit one enormous deltaY for an inertial flick, which without this
+ * would jump from fit to maximum zoom in a single frame and lose the user's
+ * place entirely.
+ */
+const WHEEL_MAX_STEP = Math.log(4);
+
+/**
+ * The zoom factor one wheel event should apply, normalised across the three
+ * `deltaMode` units and clamped so no single event can zoom more than 4x.
+ * Separated from the DOM listener in `ui/chrome.ts` so the arithmetic is
+ * testable under `environment: "node"` without a DOM.
+ *
+ * deltaY is positive when scrolling down/away, which zooms out, hence the
+ * negation.
+ */
+export function wheelZoomFactor(deltaY: number, deltaMode = 0): number {
+  if (!Number.isFinite(deltaY)) return 1;
+  const px =
+    deltaMode === 1 ? deltaY * WHEEL_LINE_PX : deltaMode === 2 ? deltaY * WHEEL_PAGE_PX : deltaY;
+  const step = -px * WHEEL_ZOOM_SENSITIVITY;
+  return Math.exp(Math.min(Math.max(step, -WHEEL_MAX_STEP), WHEEL_MAX_STEP));
+}

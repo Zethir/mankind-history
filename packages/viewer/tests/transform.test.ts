@@ -8,6 +8,7 @@ import {
   panBy,
   toScreen,
   viewportBbox,
+  wheelZoomFactor,
   zoomAt,
 } from "../src/render/transform";
 
@@ -254,5 +255,62 @@ describe("viewportBbox", () => {
     const [zMinX, zMinY, zMaxX, zMaxY] = viewportBbox(zoomed);
     expect(zMaxX - zMinX).toBeLessThan(fMaxX - fMinX);
     expect(zMaxY - zMinY).toBeLessThan(fMaxY - fMinY);
+  });
+});
+
+describe("wheelZoomFactor", () => {
+  // The owner rejected the first shipped sensitivity (0.0015) as too slow to
+  // interact with: it took about 28 wheel notches to cross the zoom range.
+  // These pin the replacement's actual feel, not just that it is "some number
+  // greater than the old one", so a later tweak has to be a deliberate one.
+  it("zooms in about 1.49x per standard wheel notch", () => {
+    // deltaY is negative scrolling up/toward, which zooms in.
+    expect(wheelZoomFactor(-100)).toBeCloseTo(1.4918, 3);
+  });
+
+  it("crosses the whole fit-to-max zoom range in about 10 notches", () => {
+    const perNotch = Math.log(wheelZoomFactor(-100));
+    // At the old 0.0015 sensitivity this was 27.7, which is the complaint.
+    expect(Math.log(MAX_ZOOM_FACTOR) / perNotch).toBeCloseTo(10.4, 1);
+  });
+
+  it("is symmetric: a notch out exactly undoes a notch in", () => {
+    // Would fail at 1.0 if the sign handling were dropped, and at anything
+    // other than 1 if in and out used different magnitudes.
+    expect(wheelZoomFactor(-100) * wheelZoomFactor(100)).toBeCloseTo(1, 10);
+  });
+
+  it("treats deltaMode 1 as lines, not pixels", () => {
+    // A browser reporting lines sends about 3 per notch. Read as pixels that
+    // is exp(0.012) = 1.012 -- a wheel that looks dead. 3 lines * 16 px is 48
+    // px, so this must be clearly more than 1.012 and less than a full notch.
+    const lines = wheelZoomFactor(-3, 1);
+    expect(lines).toBeCloseTo(Math.exp(3 * 16 * 0.004), 10);
+    expect(lines).toBeGreaterThan(1.2);
+    expect(lines).toBeLessThan(wheelZoomFactor(-100));
+  });
+
+  it("treats deltaMode 2 as pages", () => {
+    // A quarter page is 200 px, two notches' worth. Deliberately below the
+    // clamp: a full page would come back as exactly 4 whether or not the page
+    // conversion happened at all, so it would pin the clamp and not this.
+    expect(wheelZoomFactor(-0.25, 2)).toBeCloseTo(Math.exp(0.25 * 800 * 0.004), 10);
+    expect(wheelZoomFactor(-0.25, 2)).toBeCloseTo(2.2255, 3);
+  });
+
+  it("clamps a single event to a factor of four either way", () => {
+    // An inertial flick can arrive as one enormous deltaY. Unclamped, -10000
+    // would be exp(40) -- fit to maximum zoom in one frame, losing the user's
+    // place. The clamp is on the exponent, so both directions are bounded.
+    expect(wheelZoomFactor(-10000)).toBeCloseTo(4, 10);
+    expect(wheelZoomFactor(10000)).toBeCloseTo(0.25, 10);
+  });
+
+  it("is the identity for a zero or non-finite delta", () => {
+    // NaN would otherwise propagate through zoomAt into the viewport and
+    // render a blank map with nothing to point at.
+    expect(wheelZoomFactor(0)).toBe(1);
+    expect(wheelZoomFactor(Number.NaN)).toBe(1);
+    expect(wheelZoomFactor(Number.POSITIVE_INFINITY)).toBe(1);
   });
 });

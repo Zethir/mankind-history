@@ -5,7 +5,7 @@ import type { Frame } from "../engine/frame";
 import type { MapRenderer } from "../render/canvas";
 import type { DetailLevel } from "../render/level";
 import type { RenderMode } from "../render/render-mode";
-import { fitWorld, panBy, zoomAt } from "../render/transform";
+import { fitWorld, panBy, wheelZoomFactor, zoomAt } from "../render/transform";
 
 /**
  * Labelled by effect, not mechanism, so the owner can pick a mode without
@@ -42,9 +42,6 @@ function finerThan(level: DetailLevel): DetailLevel | null {
   if (level === "mid") return "full";
   return null;
 }
-
-/** How many screen pixels of wheel deltaY correspond to a factor-of-e zoom step. */
-const WHEEL_ZOOM_SENSITIVITY = 0.0015;
 
 export class Chrome {
   private readonly readout: HTMLElement;
@@ -127,7 +124,7 @@ export class Chrome {
         const rect = canvas.getBoundingClientRect();
         const sx = event.clientX - rect.left;
         const sy = event.clientY - rect.top;
-        const factor = Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY);
+        const factor = wheelZoomFactor(event.deltaY, event.deltaMode);
         renderer.setViewport(zoomAt(renderer.viewport, factor, sx, sy));
       },
       { passive: false },

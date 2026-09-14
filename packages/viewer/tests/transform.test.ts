@@ -320,11 +320,12 @@ describe("wheelZoomFactor: trackpad pinch", () => {
   // much smaller deltaY than a two-finger slide does for the same physical
   // finger travel. Sharing one sensitivity made the two gestures zoom by
   // visibly different amounts, which is what the owner reported.
-  it("zooms a pinch further than a slide of the same deltaY", () => {
-    // Would fail at 1.0 if the pinch flag were ignored, which is the bug.
+  it("zooms a pinch 5x further than a slide of the same deltaY", () => {
+    // 5 is the owner's own value, chosen by hand on the real trackpad. Would
+    // fail at 1.0 if the pinch flag were ignored, which is the bug.
     const slide = Math.log(wheelZoomFactor(-10, 0, false));
     const pinch = Math.log(wheelZoomFactor(-10, 0, true));
-    expect(pinch / slide).toBeCloseTo(10, 10);
+    expect(pinch / slide).toBeCloseTo(5, 10);
   });
 
   it("leaves the scroll path untouched", () => {
@@ -339,9 +340,9 @@ describe("wheelZoomFactor: trackpad pinch", () => {
   });
 
   it("clamps a pinch to the same factor of four", () => {
-    // The pinch multiplier reaches the clamp 10x sooner than scroll does, so
+    // The pinch multiplier reaches the clamp 5x sooner than scroll does, so
     // this is the path most likely to hit it. Without the clamp on the pinch
-    // branch, -1000 would be exp(40).
+    // branch, -1000 would be exp(20).
     expect(wheelZoomFactor(-1000, 0, true)).toBeCloseTo(4, 10);
     expect(wheelZoomFactor(1000, 0, true)).toBeCloseTo(0.25, 10);
   });

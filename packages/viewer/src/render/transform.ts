@@ -197,10 +197,11 @@ const WHEEL_MAX_STEP = Math.log(4);
  * wrongly when it misfires. So the pinch path is separated and the scroll
  * path is left to cover both slide and wheel.
  *
- * 10 is a starting point, not a measurement: the ratio depends on the
- * trackpad and the OS, and there is no device here to measure it against.
- * It is one constant, and tuning it is the intended way to adjust pinch
- * feel without touching scroll.
+ * 5 was chosen by the owner by hand, on the trackpad they actually use. It
+ * started at 10, which overshot. The ratio depends on the trackpad and the
+ * OS, so this is a calibration for one device rather than a general
+ * constant -- if pinch feels wrong on other hardware, this is the one number
+ * to move, and it adjusts pinch without touching scroll.
  */
 const PINCH_ZOOM_MULTIPLIER = 5;
 

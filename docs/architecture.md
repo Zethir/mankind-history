@@ -112,6 +112,18 @@ the canvas. Milestone 2 adds zoom and pan (`src/render/transform.ts`'s
 `scale`), and everything downstream of that had to stop assuming the viewport
 is the world.
 
+**Zoom stops at 16x fit, because the source geometry stops there.** At full
+detail -- which is unsimplified Cliopatria geometry, `SIMPLIFY_PERCENT.full`
+being 100 -- the median distance between consecutive vertices is about
+28.7 km, which covers 16 screen pixels at a 16x ceiling and 64 at the 64x the
+plan originally guessed at. Past roughly 16x the map stops showing coastline
+and starts showing the straight lines between digitised points, presented at
+a magnification that implies more than the data says. That is the spatial
+form of "never dramatise what the data cannot support", the same rule that
+suppresses the expansion flash across sampling gaps. See
+`docs/decisions/0022-zoom-ceiling.md`, which carries the measurement and the
+rejected alternatives.
+
 **Levels are a load order, not a zoom mapping.** `DetailLevel`
 (`src/render/level.ts`) names three artifacts -- coarse, mid, full -- but
 nothing selects between them by zoom scale. Coarse paints on first load; mid

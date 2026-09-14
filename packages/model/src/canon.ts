@@ -84,11 +84,12 @@ export const GRID = { cols: 64, rows: 32 } as const;
  * window -- an eighth of the world at mid, a sixty-fourth at full. Milestone
  * 2 measured that assumption and dropped it entirely (0020): levels are a
  * load order, not a zoom mapping, so a per-level scale is meaningless. The
- * old `full: 16552` was accidentally almost exact -- `fitScale(1400, 900) *
- * MAX_ZOOM_FACTOR` (`packages/viewer/src/render/transform.ts`, factor 64) is
- * 16551.9 -- but for a reason that no longer holds: it was the *maximum-zoom*
- * scale, not any level's own scale, and 0020 argues explicitly against
- * evaluating this criterion at maximum zoom at all.
+ * old `full: 16552` was accidentally almost exact against the zoom ceiling of
+ * the day -- `fitScale(1400, 900) * 64` is 16551.9 -- but for a reason that
+ * never held: it was the *maximum-zoom* scale, not any level's own scale, and
+ * 0020 argues explicitly against evaluating this criterion at maximum zoom at
+ * all. Decision 0022 has since lowered `MAX_ZOOM_FACTOR` to 16, so even that
+ * coincidence is gone.
  */
 export const DISPLACEMENT_REFERENCE_SCALE = 258.6242;
 

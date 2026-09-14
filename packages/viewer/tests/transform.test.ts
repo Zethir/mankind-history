@@ -96,6 +96,16 @@ describe("zoomAt", () => {
     for (let i = 0; i < 50; i++) v = zoomAt(v, 2, 700, 450);
     expect(v.scale).toBeCloseTo(fitScale(1400, 900) * MAX_ZOOM_FACTOR, 6);
   });
+
+  it("caps the ceiling at the measured 16x", () => {
+    // Deliberately the literal, not MAX_ZOOM_FACTOR: the assertion above uses
+    // the constant on both sides and so would pass at any value, including a
+    // silent revert to 64. 16 is a decision with a measurement behind it
+    // (docs/decisions/0022-zoom-ceiling.md -- the median segment between
+    // consecutive vertices covers 16 screen pixels there and 64 at 64x), so
+    // changing it should have to be deliberate enough to edit a test.
+    expect(MAX_ZOOM_FACTOR).toBe(16);
+  });
 });
 
 describe("panBy", () => {
@@ -268,10 +278,13 @@ describe("wheelZoomFactor", () => {
     expect(wheelZoomFactor(-100)).toBeCloseTo(1.4918, 3);
   });
 
-  it("crosses the whole fit-to-max zoom range in about 10 notches", () => {
+  it("crosses the whole fit-to-max zoom range in about 7 notches", () => {
     const perNotch = Math.log(wheelZoomFactor(-100));
-    // At the old 0.0015 sensitivity this was 27.7, which is the complaint.
-    expect(Math.log(MAX_ZOOM_FACTOR) / perNotch).toBeCloseTo(10.4, 1);
+    // ln(16) / 0.4. At the old 0.0015 sensitivity this was 18.5 notches for
+    // the same 16x ceiling, which is the complaint that moved the
+    // sensitivity; the ceiling then moved from 64x to 16x separately, for
+    // the geometry reason in decision 0022.
+    expect(Math.log(MAX_ZOOM_FACTOR) / perNotch).toBeCloseTo(6.93, 2);
   });
 
   it("is symmetric: a notch out exactly undoes a notch in", () => {

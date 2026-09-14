@@ -18,8 +18,21 @@ export interface Viewport {
   centreY: number;
 }
 
-/** How far past fit-to-window zoom may go. Full detail is what makes this useful. */
-export const MAX_ZOOM_FACTOR = 64;
+/**
+ * How far past fit-to-window zoom may go.
+ *
+ * 16, measured rather than guessed -- see
+ * docs/decisions/0022-zoom-ceiling.md. It was 64, chosen before anyone had
+ * measured what the geometry can support. At full detail (100% retention:
+ * Cliopatria's own geometry, nothing this pipeline simplified) the median
+ * segment between consecutive vertices is 0.003879 projected units, about
+ * 28.7 km. Screen pixels per median segment scale linearly with the ceiling
+ * -- 16 px at 16x, 64 px at 64x -- so past about 16x borders stop reading as
+ * coastline and start reading as the polygons they are. Zooming into detail
+ * the data does not hold is what "never dramatise what the data cannot
+ * support" rules out.
+ */
+export const MAX_ZOOM_FACTOR = 16;
 
 export function fitScale(width: number, height: number): number {
   return Math.min(width / (WORLD_HALF_WIDTH * 2), height / (WORLD_HALF_HEIGHT * 2));

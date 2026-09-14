@@ -98,12 +98,18 @@ that removes those seven events at all, at any zoom. This is not a footnote:
 it is the honest reading of why full exists, and it happens well within a
 single ordinary zoom gesture, not at some remote edge case.
 
-At the far end, maximum zoom (fit x `MAX_ZOOM_FACTOR` 64 =
-**16551.9** px/unit -- note this is close to the old, now-deleted
-`PX_PER_UNIT.full` of 16552, which was a coincidence of the old guess landing
-near the max-zoom scale, not near any level's own scale) the same p99 is
-**48.5 px**. That number matters only for the alternative this decision
+At the far end, maximum zoom (fit x `MAX_ZOOM_FACTOR`) the same p99 is
+**12.13 px**. That number matters only for the alternative this decision
 rejects next.
+
+*Amended by 0022:* the ceiling was 64 when this record was written, putting
+max zoom at 16551.9 px/unit and p99 at 48.5 px. 0022 lowered it to 16, so max
+zoom is 4138.0 px/unit and p99 is 12.13 px. The figures below are restated at
+16; the argument is unchanged, because it never depended on the ceiling's
+particular value. (The old, now-deleted `PX_PER_UNIT.full` of 16552 was
+near-identical to fit x 64 -- a coincidence of that guess landing on the
+then-current max-zoom scale rather than on any level's own scale. With the
+ceiling at 16 even that coincidence is gone.)
 
 ## Rejected alternatives
 
@@ -114,9 +120,12 @@ version of it fails mid for the same reason it failed before. This is why the
 criterion is changing shape at all, not only its numbers.
 
 **2. A criterion phrased at maximum zoom instead of fit zoom.** Evaluating
-the same p99 displacement at 16551.9 px/unit (fit x 64) gives 48.5 px for
+the same p99 displacement at 4138.0 px/unit (fit x 16) gives 12.13 px for
 *both* coarse and mid -- a criterion of "under one pixel" fails both of them
-by roughly 48x. Only `full`, the unsimplified reference geometry being
+by roughly 12x. (At the 64x ceiling this record was written against it was
+48.5 px, failing by 48x; lowering the ceiling narrows the gap without
+closing it, so the objection survives 0022 intact.) Only `full`, the
+unsimplified reference geometry being
 compared against itself, would pass, and it would pass trivially: zero
 displacement at any scale, by construction. A criterion that nothing but the
 reference case can pass, and that both real candidates fail by the same
@@ -124,7 +133,7 @@ degree, discriminates nothing and asserts nothing -- it is not a criterion.
 Fit zoom is the scale where a real answer exists: coarse and mid both pass,
 full is not needed to make it pass, and the criterion is doing its job of
 bounding *typical* simplification fidelity rather than describing what
-simplification is not designed to survive at 64x magnification.
+simplification is not designed to survive at maximum magnification.
 
 ## Consequences
 

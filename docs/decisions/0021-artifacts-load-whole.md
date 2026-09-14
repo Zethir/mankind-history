@@ -5,7 +5,8 @@
 ## Context
 
 Milestone 2 adds three detail levels of `versions.*.json` and two of
-`land.*.json`, loaded progressively as the user zooms (see
+`land.*.json`, loaded progressively -- coarse on first load, mid after first
+paint, full once mid's own fetch settles -- rather than all at once (see
 docs/phase-2-milestone-2-design.md, "Prefetching"). `versions.2.json` (full
 detail) is 73.5 MB uncompressed on the real pinned build. The instinct on
 seeing a file that size is to chunk it by region, so only the area on screen

@@ -1,6 +1,5 @@
 import type { ChangesArtifact } from "@history/model";
-import { equalEarth } from "@history/model";
-import { cellRangeFor } from "./change-index";
+import { cellRangeFor, equalEarth } from "@history/model";
 
 /**
  * Equal Earth curves, so projecting the four corners of a lon/lat box is not

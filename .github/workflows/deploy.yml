@@ -39,12 +39,19 @@ jobs:
 
       - run: pnpm fetch:sources
       - run: pnpm build
-      # prebuild (scripts/stage-data.mjs) stages the four artifacts this
-      # milestone needs from the just-built dist/ into public-data/, which is
-      # what Vite's publicDir actually points at -- not dist/ itself, which
-      # also carries versions.1.json and versions.2.json (~124 MB this
-      # milestone never requests). Building right after `pnpm build` means
-      # the staged data and the app ship from one commit.
+      # prebuild (scripts/stage-data.mjs) stages every artifact the pipeline
+      # emits from the just-built dist/ into public-data/, which is what
+      # Vite's publicDir actually points at -- not dist/ itself, so the build
+      # never depends on dist/'s own file layout. All eight are staged and
+      # shipped, not a curated subset: the progressive-upgrade chain fetches
+      # every version level and both land levels at runtime, not just the
+      # coarse pair. Uncompressed on disk that is changes.json 0.6 MB,
+      # land.0 0.07 MB, land.1 0.95 MB, polities 0.25 MB, versions.0 35.6 MB,
+      # versions.1 47.2 MB, versions.2 77.0 MB, manifest 0.002 MB -- 154 MB
+      # total, comfortably inside GitHub Pages' limits (the largest single
+      # file, versions.2 at 77.0 MB, is under its 100 MB per-file cap).
+      # Building right after `pnpm build` means the staged data and the app
+      # ship from one commit.
       - run: pnpm --filter @history/viewer build
 
       - uses: actions/configure-pages@v5

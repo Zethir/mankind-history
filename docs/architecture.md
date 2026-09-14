@@ -75,10 +75,11 @@ guessed:
   (median, p95, worst) and the reasoning.
 - **`viewport.scale`.** `fitWorld` in `src/render/transform.ts` computes the
   real screen-pixels-per-projected-unit figure at whatever size the canvas
-  actually is. At a 1400x900 viewport it measures 258.6 px per projected
-  unit - the real number Milestone 2 uses to replace the provisional
-  `PX_PER_UNIT` constants in `packages/model/src/canon.ts`, which were a
-  guess made before any viewport existed.
+  actually is. At a 1400x900 viewport it measures 258.6242 px per projected
+  unit - the real, measured figure `packages/model/src/canon.ts` now records
+  as `DISPLACEMENT_REFERENCE_SCALE`, replacing the provisional `PX_PER_UNIT`
+  guesses made before any viewport existed. See "Zoom, progressive detail,
+  and viewport-scoped playback" below and decision 0020.
 
 Neither figure says anything about whether the playback feel or the palette
 hold up at that density. The original 16-hue palette was watched and reported
@@ -102,6 +103,118 @@ and rejected as unreadable once two empires sit next to each other). None of
 these palettes has been judged by a human watching the map run against the
 real dataset, and that judgement is Milestone 1's exit condition, not
 something this document can assert on their behalf.
+
+## Zoom, progressive detail, and viewport-scoped playback (Milestone 2)
+
+Milestone 1 shipped a map with exactly one viewport: the whole world, fit to
+the canvas. Milestone 2 adds zoom and pan (`src/render/transform.ts`'s
+`Viewport`, a centre in projected units plus a screen-pixels-per-projected-unit
+`scale`), and everything downstream of that had to stop assuming the viewport
+is the world.
+
+**Levels are a load order, not a zoom mapping.** `DetailLevel`
+(`src/render/level.ts`) names three artifacts -- coarse, mid, full -- but
+nothing selects between them by zoom scale. Coarse paints on first load; mid
+is prefetched at low priority once first paint completes and silently
+replaces coarse's geometry when it arrives; full is requested unconditionally
+once mid's own fetch settles -- succeeds or fails -- with no zoom gate at
+all: `LevelRegistry` (`src/data/levels.ts`) queues full from mid's
+`.finally()`, regardless of whether the user has ever touched the viewport.
+Detail only ever improves and never downgrades. A zoom gate on `full` was
+carried earlier in the milestone and was dropped, not merely left
+unmentioned: it existed to spare a visitor who never zooms the 12 MB
+gzipped `versions.2` fetch, and that saving was knowingly traded away once
+zoom-based level switching itself was dropped (below) and nothing was left
+to make the gate's premise -- "a zoom is evidence of exploring" -- meaningful
+as a gate on anything. The cost, stated plainly: every visitor now
+eventually pulls all three `versions.*` levels regardless of whether they
+ever zoom, 19.4 MB gzipped transferred and 331 MB resident in heap once all
+three are loaded (`docs/phase-2-milestone-2-design.md`'s payload table; see
+also `docs/decisions/0021-artifacts-load-whole.md`). This shape exists
+because Milestone 2 twice tried to build a
+zoom-based switching threshold and measured, both times, that this dataset
+does not support one: border displacement (Task 1) turned out to be the same
+seven world-space events at coarse and mid regardless of scale, and
+retained-vertex spacing (Task 6) differs by at most 35% between any two
+levels with identical maxima. Neither measurement produces a scale where one
+level looks meaningfully worse than the next. See
+`docs/decisions/0020-percentile-displacement.md` and
+docs/phase-2-milestone-2-design.md, "Thresholds: what the measurement
+actually showed", for the full arithmetic and the two measurements that
+killed the idea.
+
+**A level upgrade swaps geometry but never rebuilds the palette,** and that
+is a known trade, not an oversight. `MapRenderer.setVersions` (`src/render/
+canvas.ts`) only swaps in the new artifact and clears the cached `Path2D`s --
+it does not call `buildPalette` again, on the reasoning that every level's
+`rows` are byte-identical, so nothing the palette's own colour assignment
+reads (`memberOf`, validity intervals) changes across a level swap. That
+reasoning is incomplete: `buildProximityGraph` (`src/render/palette.ts`)
+colours partly by spatial adjacency, read from each version's bounding box in
+`versions.geometry`, and simplification can shrink a bbox -- so a pair
+adjacent at `full` could in principle be non-adjacent at `coarse` and end up
+sharing a colour once the upgrade lands. This was not reproduced on the
+fixture, and rebuilding was judged the riskier choice anyway: `buildPalette`
+throws on palette overflow, and a rebuild mid-session could kill a running
+map over a change too subtle to be worth that risk. The code is unchanged;
+this paragraph exists so a future reader finds a recorded trade rather than
+an apparent gap.
+
+**Land saturates at mid by construction, not by a lookup.** The pipeline
+emits only `land.0` and `land.1` -- there is no `land.2` -- so the land
+basemap has nowhere finer to go past mid regardless of how detailed the
+political layer gets. Milestone 2 originally carried this as a runtime
+function, `landLevelFor(level: DetailLevel): "coarse" | "mid"`, mapping the
+political layer's level to the land level. It was deleted once its last
+production caller went away: the land basemap now upgrades as soon as its own
+`fetchLand` request resolves, independent of the versions level entirely (see
+`src/main.ts`), so there was nothing left calling it. The invariant it used
+to enforce at runtime -- land never requests a level the pipeline does not
+emit -- is now carried by `fetchLand`'s own parameter type,
+`level: "coarse" | "mid"` (`src/data/artifacts.ts`), which cannot even be
+asked to hold a third value. A dead function that still typechecks is a worse
+record of an invariant than a type signature that makes violating it
+impossible to write, so the type is the record now, not a comment pointing at
+retired code.
+
+**A failed fetch does not retry in a loop.** If a level's fetch fails, the
+viewer stays on whatever level it already has and logs it. `LevelRegistry`
+only ever moves an entry forward (`absent` -> `loading` -> `resident` or
+`failed`) and never resets one back to `absent`, so a failed level is never
+automatically retried for the rest of the session -- there is no zoom or
+scroll trigger left to retry it *from* now that level switching does not run
+off either, and a multi-megabyte request retried in a loop would look like a
+hang regardless of what triggered it.
+
+**Playback stays viewport-scoped, and the asymmetry is deliberate.**
+`ChangeYears` (`src/engine/change-years.ts`) answers "what changes next"
+against `changes.json`'s spatial index rather than scanning every version row
+-- Milestone 1 could scan rows because its one viewport was the world; once
+the viewport is a sub-region, the index is the only structure that can answer
+"next change *here*". Of 937 distinct change years, the single densest grid
+cell holds 855 of them (91%), over Europe, so viewport-scoped acceleration is
+near-inert while looking at Europe and dominant everywhere else. The project
+owner was shown this concentration and chose to keep it rather than cap
+acceleration -- see decision 0006 -- because it makes the dataset's uneven
+real coverage legible on screen rather than hidden behind a uniform pace.
+
+**Artifacts load whole and stay resident; there is no region-chunking.**
+`versions.2.json` alone is 73.5 MB uncompressed on the real dataset, and all
+three `versions.*` levels resident at once cost 331 MB of heap. That is
+inside a desktop tab's ordinary budget, so nothing is chunked by region or
+evicted once parsed. See `docs/decisions/0021-artifacts-load-whole.md` for
+the full payload table, the deployed site's actual on-disk size once every
+artifact was correctly staged (a gap Task 9 found and fixed), and the
+measurement that would change this answer.
+
+**Not yet validated by use.** Zoom and progressive level switching are
+implemented and tested against synthetic and fixture data, but the project
+owner has not yet used the deployed map at a real zoom level, over a dense
+region and a sparse one, to judge whether the coarse-to-full upgrade is
+visible in a way that distracts, or whether viewport-scoped acceleration
+reads as intended. That judgement is this milestone's exit condition, the
+same way palette and playback feel were Milestone 1's -- this document
+records what was built and measured, not that a person has watched it run.
 
 ## The canonical model
 
@@ -219,21 +332,28 @@ that is a removal, counted separately and not measured.
 Measured on the real dataset, both levels seeing the same 22,215 shared arcs
 (arcs of at least three points, so none can be trivially identical):
 
-| level | identical | one side dropped | displaced | worst |
+| level | identical | one side dropped | displaced | p99 |
 |---|---|---|---|---|
-| coarse | 21,058 (94.8%) | 1,150 | 7 | 0.759 px |
-| mid | 21,508 (96.8%) | 700 | 7 | 6.066 px |
+| coarse | 21,058 (94.8%) | 1,150 | 7 | 0.7583 px |
+| mid | 21,508 (96.8%) | 700 | 7 | 0.7583 px |
 
-**Coarse meets the one-pixel bound.** Mid exceeds it on 7 of 22,215 arcs -
-which are the same seven world-space events as coarse's, about 0.0029 projected
-units or 22 km each. Mid only looks eight times worse because `PX_PER_UNIT.mid`
-makes mid's pixel eight times smaller for an identical displacement, and
-`PX_PER_UNIT` is provisional: a guess at a Phase 2 viewport that does not exist
-yet. So mid is asserted in **world units, at the coarse level's pixel size**,
-rather than pretended to pass. Phase 2 should revisit the bound once
-`PX_PER_UNIT` holds the viewer's real figures. The regression the criterion
-exists to catch - per-group simplification cracking a shared border into
-hairline gaps - remains separately gated by the noisy-shared-boundary test in
+**Both levels meet the one-pixel bound**, measured as decision 0020 amends
+it: p99 displacement across the displaced arcs (7 of the 22,215 shared arcs
+above; the 1,150 coarse / 700 mid dropped arcs are excluded from the
+statistic too, not counted as zero displacement), at one shared reference
+scale (`DISPLACEMENT_REFERENCE_SCALE` = 258.6242 px/unit, `fitScale(1400,
+900)`),
+rather than the maximum at each level's own guessed, mismatched scale. The
+original measurement above found the maximum could not tell coarse from mid
+apart at all -- the same seven world-space events, ~0.0029 projected units
+each, produce coarse's and mid's worst case identically; mid only looked
+eight times worse under the old criterion because its guessed `PX_PER_UNIT`
+made an identical displacement map to a smaller pixel. See 0020 for the full
+argument, including why a criterion evaluated at maximum zoom (which both
+levels fail by roughly 48x, and which only the unsimplified reference level
+can pass, trivially) was rejected too. The regression this criterion exists
+to catch - per-group simplification cracking a shared border into hairline
+gaps - remains separately gated by the noisy-shared-boundary test in
 `packages/pipeline/tests/simplify.test.ts`, verified to fail when
 simplification is rewritten to one mapshaper call per group instead of one call
 for the whole group.

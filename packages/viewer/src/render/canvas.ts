@@ -3,7 +3,7 @@ import type { Frame } from "../engine/frame";
 import { buildAggregateParents, buildPalette, type Palette, resolveAggregateRoot } from "./palette";
 import { buildPolityIndex, type PolityIndexEntry } from "./polity-index";
 import { colourForDraw, type RenderMode } from "./render-mode";
-import { fitWorld, toScreen, type Viewport } from "./transform";
+import { fitWorld, panBy, type Viewport } from "./transform";
 
 /**
  * Three ground tones and nothing else, per decision 0003. The middle tone is
@@ -89,8 +89,8 @@ export class MapRenderer {
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
-    private readonly versions: VersionsArtifact,
-    private readonly land: LandArtifact,
+    private versions: VersionsArtifact,
+    private land: LandArtifact,
   ) {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("canvas 2d context unavailable");
@@ -113,24 +113,84 @@ export class MapRenderer {
     this.resize();
   }
 
+  /**
+   * Resizes the backing store and re-clamps, without discarding the user's
+   * centre or zoom -- a window resize must not silently reset the view back
+   * to `fitWorld` now that interaction exists (it was harmless to do so
+   * before this task, when the viewport never moved from fit in the first
+   * place). Only what genuinely depends on canvas size changes: the backing
+   * store, width/height, and the clamp, since a smaller canvas can raise the
+   * minimum scale and shrink the pan limits. Reclamping goes through
+   * `panBy`'s shared `clamp()` (a zero-distance pan) rather than a second
+   * clamp implementation of this file's own.
+   */
   resize(): void {
     const dpr = window.devicePixelRatio || 1;
     const width = this.canvas.clientWidth;
     const height = this.canvas.clientHeight;
     this.canvas.width = Math.round(width * dpr);
     this.canvas.height = Math.round(height * dpr);
-    const fitted = fitWorld(width, height);
-    Object.assign(this.viewport, fitted);
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    // Paths are built in screen space, so a resize invalidates all of them.
+    const resized = panBy({ ...this.viewport, width, height }, 0, 0);
+    Object.assign(this.viewport, resized);
+    // Paths are built in world space (projected units), so they are valid for
+    // every viewport -- a resize only changes fit-to-window scale and the
+    // canvas's backing size, neither of which the cache depends on. It is
+    // cleared on a level switch instead, in setVersions below.
+  }
+
+  setViewport(v: Viewport): void {
+    Object.assign(this.viewport, v);
+  }
+
+  /**
+   * Swaps in a finer (or coarser -- never happens in practice, but nothing
+   * here assumes otherwise) detail level's geometry. Only the geometry
+   * source and the path cache change: `areaOf`, `knownPolityIds`,
+   * `aggregateIds` and `aggregateParents` are built from `rows`, and every
+   * detail level's `rows` are byte-identical (verified against
+   * fixtures/dist: only `coordScale` and vertex values differ across
+   * versions.0/1/2.json) -- rebuilding them here would be wasted work, not
+   * a correctness fix.
+   *
+   * The path cache must be cleared, though: a cached Path2D was built at the
+   * old artifact's `coordScale`, and drawing it against the new one's scale
+   * (1e5 vs 1e9, coarse to full) would render a map orders of magnitude too
+   * small.
+   */
+  setVersions(artifact: VersionsArtifact): void {
+    this.versions = artifact;
     this.paths.clear();
+  }
+
+  /** Swaps in a finer land basemap. Mirrors setVersions for the one path it caches. */
+  setLand(artifact: LandArtifact): void {
+    this.land = artifact;
     this.landPath = null;
   }
 
   draw(frame: Frame): void {
-    const { ctx, viewport } = this;
+    const ctx = this.ctx;
+    const { viewport } = this;
+
+    // The sea covers the canvas, not the world, so it is filled in screen
+    // space -- CSS pixels scaled to the device pixel ratio, with no world
+    // transform -- before the world transform below is set, or it would pan
+    // and zoom away from the canvas edges.
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = SEA;
     ctx.fillRect(0, 0, viewport.width, viewport.height);
+
+    // World -> screen, with Y flipped, then device pixels. Everything drawn
+    // after this is in projected units.
+    ctx.setTransform(
+      dpr * viewport.scale,
+      0,
+      0,
+      -dpr * viewport.scale,
+      dpr * (viewport.width / 2 - viewport.centreX * viewport.scale),
+      dpr * (viewport.height / 2 + viewport.centreY * viewport.scale),
+    );
 
     if (!this.landPath) {
       this.landPath = this.buildPath(this.land.polygons, this.land.coordScale);
@@ -166,7 +226,11 @@ export class MapRenderer {
       // Same globalAlpha as the fill, so the outline fades with the version
       // rather than persisting as a solid line after the shape has faded out.
       ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = POLITY_OUTLINE_WIDTH;
+      // Widths are screen pixels but the transform is in projected units. One
+      // world unit is dpr*scale device pixels and a W-pixel stroke is W*dpr
+      // device pixels, so lineWidth is W/scale -- the dpr cancels. Without
+      // this, borders thicken as you zoom until the map is all outline.
+      ctx.lineWidth = POLITY_OUTLINE_WIDTH / viewport.scale;
       ctx.stroke(path);
       if (d.flash > 0) {
         ctx.globalAlpha = d.alpha * d.flash * 0.55;
@@ -192,7 +256,7 @@ export class MapRenderer {
         if (!path) continue;
         ctx.globalAlpha = d.alpha;
         ctx.strokeStyle = OUTLINE;
-        ctx.lineWidth = AGGREGATE_OUTLINE_WIDTH;
+        ctx.lineWidth = AGGREGATE_OUTLINE_WIDTH / viewport.scale;
         ctx.stroke(path);
       }
     }
@@ -214,19 +278,20 @@ export class MapRenderer {
     return path;
   }
 
+  /**
+   * Built in world space (projected units, Y not flipped), so the path is
+   * valid for every viewport -- pan and zoom are applied once as a canvas
+   * transform in draw(), not baked into each vertex. See decision 0002.
+   */
   private buildPath(polygons: readonly Polygon[], coordScale: number): Path2D {
     const path = new Path2D();
     for (const polygon of polygons) {
       for (const ring of polygon) {
         for (let i = 0; i + 1 < ring.length; i += 2) {
-          const [sx, sy] = toScreen(
-            this.viewport,
-            ring[i] as number,
-            ring[i + 1] as number,
-            coordScale,
-          );
-          if (i === 0) path.moveTo(sx, sy);
-          else path.lineTo(sx, sy);
+          const x = (ring[i] as number) / coordScale;
+          const y = (ring[i + 1] as number) / coordScale;
+          if (i === 0) path.moveTo(x, y);
+          else path.lineTo(x, y);
         }
         path.closePath();
       }

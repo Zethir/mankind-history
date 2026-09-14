@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   type ChangesArtifact,
   COORD_SCALE,
+  DISPLACEMENT_REFERENCE_SCALE,
   equalEarth,
   equalEarthInverse,
   type LandArtifact,
@@ -12,7 +13,6 @@ import {
   type ManifestArtifact,
   type PolitiesArtifact,
   type Polygon,
-  PX_PER_UNIT,
   type Version,
   type VersionsArtifact,
 } from "@history/model";
@@ -20,6 +20,8 @@ import { readArtifact } from "@history/model/artifact";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { build, loadAliases, loadOverlaps } from "../src/build";
 import { nextChangeAfter, nextChangeBruteForce } from "../src/stages/change-index";
+import { measureDisplacement } from "../src/stages/displacement";
+import { percentile } from "../src/stages/spacing";
 
 const SCALE = COORD_SCALE.full;
 const FIXTURES = "fixtures";
@@ -398,9 +400,28 @@ describe("build", () => {
 });
 
 describe("simplification", () => {
-  it("no pair of previously-adjacent polygons has gained a gap wider than one screen pixel", () => {
-    // THE CRITERION. docs/phase-1-importer.md states it as a one-pixel bound
-    // on the gap between polygons that shared an edge before simplification.
+  it("at the displacement reference scale, each level's p99 border displacement stays under one screen pixel", () => {
+    // THE CRITERION (decision 0020). docs/phase-1-importer.md originally
+    // stated a one-pixel bound on the MAXIMUM displacement, evaluated at each
+    // level's own PX_PER_UNIT guess (259 coarse / 2069 mid). Milestone 2 Task
+    // 1 measured that on the real dataset and found the maximum cannot
+    // discriminate the levels at all: coarse's and mid's worst displacement
+    // is the exact same seven world-space events, ~0.0029 projected units
+    // each. A max-based rule at mismatched per-level scales made mid look
+    // eight times worse for an identical underlying event. See 0020 for the
+    // full argument, including why a criterion evaluated at maximum zoom was
+    // rejected too.
+    //
+    // The replacement measures p99 displacement across the DISPLACED arcs --
+    // the ones simplification moved without dropping, 7 of 22,215 on the real
+    // build -- at ONE real, shared reference scale. Across all shared arcs the
+    // p99 would be exactly 0 and would pass trivially; the dropped arcs (1,150
+    // at coarse, 700 at mid) are excluded from the statistic entirely, which
+    // bounds what this criterion can claim. The scale is
+    // DISPLACEMENT_REFERENCE_SCALE
+    // (`fitScale(1400, 900)`, canon.ts), not a per-level guess. Levels no
+    // longer switch on zoom (0020, "Levels are a bandwidth difference, not a
+    // fidelity one"), so there is no per-level scale left to measure at.
     //
     // WHY SIX EARLIER FORMULATIONS FAILED. Each of them asked "what surviving
     // geometry is nearest this dropped point?", which has no removal-free
@@ -411,304 +432,75 @@ describe("simplification", () => {
     // DISPLACEMENT. (See the Task 5 report for the six in detail.)
     //
     // WHAT IS MEASURED HERE INSTEAD. Never look at polygons; look at the
-    // shared arc. From the full-detail geometry, every edge -- each
+    // shared arc -- see measureDisplacement in
+    // packages/pipeline/src/stages/displacement.ts, extracted from this test
+    // (Phase 2 Milestone 2 Task 1) so there is one implementation rather than
+    // two that can drift. From the full-detail geometry, every edge -- each
     // consecutive vertex pair -- is keyed direction-independently and records
     // which version ids use it. Edges with two or more users are grouped by
     // their exact co-user set and chained into maximal polylines. Each such
     // polyline is a shared arc, defined entirely from the full data and
     // independent of anything simplification did.
     //
-    // mapshaper never RELOCATES a vertex, only drops vertices -- asserted
-    // below, and measured on the real dataset as 0 of 2,400,206 coarse
-    // vertices absent from the rescaled full-detail vertex set. So each side's
-    // simplified border along an arc is exactly the retained subsequence of
-    // that arc's own points, and the two sides can be compared directly by
-    // Hausdorff distance. Ring identity across simplification -- which the
-    // earlier attempts believed was required and could not be had -- is not
-    // needed at all. A side retaining fewer than two arc points has dropped
-    // the arc: that is a removal, counted and not measured. Arcs shorter than
-    // three points are skipped, so an arc cannot be trivially identical.
+    // mapshaper never RELOCATES a vertex, only drops vertices -- enforced
+    // inside measureDisplacement, and measured on the real dataset as 0 of
+    // 2,400,206 coarse vertices absent from the rescaled full-detail vertex
+    // set. So each side's simplified border along an arc is exactly the
+    // retained subsequence of that arc's own points, and the two sides can be
+    // compared directly by Hausdorff distance. Ring identity across
+    // simplification -- which the earlier attempts believed was required and
+    // could not be had -- is not needed at all. A side retaining fewer than
+    // two arc points has dropped the arc: that is a removal, counted and not
+    // measured. Arcs shorter than three points are skipped, so an arc cannot
+    // be trivially identical.
     //
-    // MEASURED, on the real dataset (13,380 versions), both levels seeing the
-    // same 22,215 shared arcs:
-    //   coarse  21,058 identical (94.8%)  1,150 a side dropped  7 displaced  worst 0.759 px
-    //   mid     21,508 identical (96.8%)    700 a side dropped  7 displaced  worst 6.066 px
+    // MEASURED, on the real dataset (13,380 versions, via
+    // `pnpm build && pnpm displacement`), both levels seeing the same 22,215
+    // shared arcs:
+    //   coarse  21,058 identical (94.8%)  1,150 a side dropped  7 displaced  p99 0.7583 px
+    //   mid     21,508 identical (96.8%)    700 a side dropped  7 displaced  p99 0.7583 px
     // The seven displacements are the same seven world-space events at both
-    // levels, ~0.0029 projected units, about 22 km. Coarse therefore meets the
-    // criterion as the spec states it. Mid exceeds it only because
-    // PX_PER_UNIT.mid makes mid's pixel eight times smaller for an identical
-    // world-space displacement -- and PX_PER_UNIT is PROVISIONAL, a guess at a
-    // viewport that does not exist yet (see canon.ts). Mid is therefore bounded
-    // in WORLD units, at the coarse level's pixel size, rather than pretended
-    // to pass. Phase 2 should revisit once PX_PER_UNIT holds real figures.
+    // levels, ~0.0029 projected units, about 22 km -- and because only 7 of
+    // 22,215 arcs are displaced at all, p90 through the max collapse onto
+    // that same single largest value at both levels (floor(0.9 * 7) through
+    // floor(0.99 * 7) are all index 6, the top of a 7-member list); p50 is
+    // the only percentile that differs between coarse and mid, by 0.06%. Both
+    // levels' p99 is 0.7583 px at DISPLACEMENT_REFERENCE_SCALE -- under one
+    // pixel, so both pass -- see docs/phase-2-milestone-2-design.md for the
+    // full table.
     //
     // This test runs on the committed fixture, not on the real dataset, and
-    // the fixture exercises the arc population thinly: 620 shared arcs against
-    // the real 22,215, with a much lower identical fraction because a small
-    // carve loses proportionally more sub-polygons. The floor asserted below
-    // is sized for the fixture; the table above is the real signal.
+    // the fixture exercises the arc population far too thinly to characterise
+    // a percentile: 620 shared arcs against the real 22,215. The full build's
+    // CI workflow (`pnpm displacement` in .github/workflows/full-build.yml)
+    // is what actually enforces this criterion at scale; this test exercises
+    // the same code path against the fixture so a change to the measurement
+    // itself is still caught here.
     //
     // The regression this criterion exists to guard against -- per-group
     // simplification cracking a shared border into hairline gaps -- is
     // separately gated by the noisy-shared-boundary test in
     // packages/pipeline/tests/simplify.test.ts, empirically verified to fail
     // when simplification is rewritten to one mapshaper call per group.
-    const full = readArtifact<VersionsArtifact>(join(outDir, "versions.2.json"));
+    const onePixelInProjectedUnits = 1 / DISPLACEMENT_REFERENCE_SCALE;
 
-    // --- Shared arcs, built once from the full-detail geometry. ---
-    const positionIds = new Map<string, number>();
-    const posX: number[] = [];
-    const posY: number[] = [];
-    const internPosition = (x: number, y: number): number => {
-      const key = `${x},${y}`;
-      const existing = positionIds.get(key);
-      if (existing !== undefined) return existing;
-      const id = posX.length;
-      positionIds.set(key, id);
-      posX.push(x);
-      posY.push(y);
-      return id;
-    };
-
-    const versionIds = Object.keys(full.geometry);
-    const versionIndex = new Map(versionIds.map((id, i) => [id, i] as const));
-
-    const edgeKey = (a: number, b: number) => (a < b ? `${a}:${b}` : `${b}:${a}`);
-    const edgeUsers = new Map<string, Set<number>>();
-    for (const [id, g] of Object.entries(full.geometry)) {
-      const user = versionIndex.get(id) as number;
-      for (const polygon of g.polygons) {
-        for (const ring of polygon) {
-          let previous = internPosition(ring[0] as number, ring[1] as number);
-          for (let i = 2; i < ring.length; i += 2) {
-            const current = internPosition(ring[i] as number, ring[i + 1] as number);
-            if (current !== previous) {
-              const key = edgeKey(previous, current);
-              const users = edgeUsers.get(key);
-              if (users) users.add(user);
-              else edgeUsers.set(key, new Set([user]));
-            }
-            previous = current;
-          }
-        }
-      }
-    }
-
-    // Grouped by the EXACT co-user set, so two borders that merely touch at a
-    // node are never chained into one arc.
-    const groupedEdges = new Map<string, Array<[number, number]>>();
-    for (const [key, users] of edgeUsers) {
-      if (users.size < 2) continue;
-      const groupKey = [...users].sort((a, b) => a - b).join(",");
-      const parts = key.split(":");
-      const edge: [number, number] = [Number(parts[0]), Number(parts[1])];
-      const edges = groupedEdges.get(groupKey);
-      if (edges) edges.push(edge);
-      else groupedEdges.set(groupKey, [edge]);
-    }
-
-    const arcs: Array<{ users: number[]; path: number[] }> = [];
-    for (const [groupKey, edges] of groupedEdges) {
-      const users = groupKey.split(",").map(Number);
-      const adjacency = new Map<number, number[]>();
-      const link = (a: number, b: number) => {
-        const list = adjacency.get(a);
-        if (list) list.push(b);
-        else adjacency.set(a, [b]);
-      };
-      for (const [a, b] of edges) {
-        link(a, b);
-        link(b, a);
-      }
-      const walked = new Set<string>();
-      const walkFrom = (start: number) => {
-        for (const first of adjacency.get(start) as number[]) {
-          if (walked.has(edgeKey(start, first))) continue;
-          const path = [start];
-          let previous = start;
-          let current = first;
-          for (;;) {
-            walked.add(edgeKey(previous, current));
-            path.push(current);
-            const neighbours = adjacency.get(current) as number[];
-            // A junction or a dead end ends the arc: beyond it the co-users
-            // are no longer the same two sides walking together.
-            if (neighbours.length !== 2) break;
-            const next = (neighbours[0] === previous ? neighbours[1] : neighbours[0]) as number;
-            if (walked.has(edgeKey(current, next))) break;
-            previous = current;
-            current = next;
-          }
-          arcs.push({ users, path });
-        }
-      };
-      for (const [node, neighbours] of adjacency) if (neighbours.length !== 2) walkFrom(node);
-      for (const node of adjacency.keys()) walkFrom(node); // closed loops have no endpoint
-    }
-
-    /** Distance from a point to a line segment, not to its endpoints. */
-    const pointToSegment = (
-      px: number,
-      py: number,
-      x1: number,
-      y1: number,
-      x2: number,
-      y2: number,
-    ): number => {
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      const len2 = dx * dx + dy * dy;
-      if (len2 === 0) return Math.hypot(px - x1, py - y1);
-      let t = ((px - x1) * dx + (py - y1) * dy) / len2;
-      t = t < 0 ? 0 : t > 1 ? 1 : t;
-      return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
-    };
-    /** One-sided Hausdorff: the furthest any point of `a` sits from the polyline `b`. */
-    const directedHausdorff = (a: number[], b: number[]): number => {
-      let worst = 0;
-      for (let i = 0; i < a.length; i += 2) {
-        let nearest = Number.POSITIVE_INFINITY;
-        for (let j = 0; j + 3 < b.length; j += 2) {
-          const d = pointToSegment(
-            a[i] as number,
-            a[i + 1] as number,
-            b[j] as number,
-            b[j + 1] as number,
-            b[j + 2] as number,
-            b[j + 3] as number,
-          );
-          if (d < nearest) nearest = d;
-        }
-        if (nearest > worst) worst = nearest;
-      }
-      return worst;
-    };
-    const hausdorff = (a: number[], b: number[]) =>
-      Math.max(directedHausdorff(a, b), directedHausdorff(b, a));
-
-    const coarsePixel = COORD_SCALE.coarse / PX_PER_UNIT.coarse;
-
-    for (const [file, level] of [
-      ["versions.0.json", "coarse"],
-      ["versions.1.json", "mid"],
-    ] as const) {
-      const simplified = readArtifact<VersionsArtifact>(join(outDir, file));
-      const scale = COORD_SCALE[level];
-      const rescale = (v: number) => Math.round((v / COORD_SCALE.full) * scale);
-
-      // Which versions retain each position, in this level's coordinates.
-      const retainedBy = new Map<string, Set<number>>();
-      for (const [id, g] of Object.entries(simplified.geometry)) {
-        const user = versionIndex.get(id) as number;
-        for (const polygon of g.polygons) {
-          for (const ring of polygon) {
-            for (let i = 0; i < ring.length; i += 2) {
-              const key = `${ring[i]},${ring[i + 1]}`;
-              const users = retainedBy.get(key);
-              if (users) users.add(user);
-              else retainedBy.set(key, new Set([user]));
-            }
-          }
-        }
-      }
-
-      // The load-bearing assumption: mapshaper drops vertices, never moves
-      // them. If it ever moved one, "retained subsequence" would stop being a
-      // faithful description of the simplified border and every number below
-      // would be measuring the wrong thing.
-      const fullPositions = new Set<string>();
-      for (let i = 0; i < posX.length; i++) {
-        fullPositions.add(`${rescale(posX[i] as number)},${rescale(posY[i] as number)}`);
-      }
-      let relocated = 0;
-      for (const key of retainedBy.keys()) if (!fullPositions.has(key)) relocated++;
-      expect(relocated).toBe(0);
-
-      let arcsConsidered = 0;
-      let identical = 0;
-      let droppedArcs = 0;
-      let displaced = 0;
-      let worstDisplacement = 0;
-      const displacements: Array<{ distance: number; label: string }> = [];
-
-      for (const arc of arcs) {
-        if (arc.path.length < 3) continue;
-        arcsConsidered++;
-
-        const points = arc.path.map(
-          (p) => [rescale(posX[p] as number), rescale(posY[p] as number)] as const,
-        );
-        const holders = points.map(([x, y]) => retainedBy.get(`${x},${y}`));
-
-        // Each side's simplified border along this arc: the arc's own points,
-        // in arc order, that this version still has.
-        const sides = new Map<number, number[]>();
-        let sideDropped = false;
-        for (const user of arc.users) {
-          const retained: number[] = [];
-          for (let i = 0; i < points.length; i++) {
-            if (holders[i]?.has(user)) {
-              const point = points[i] as readonly [number, number];
-              retained.push(point[0], point[1]);
-            }
-          }
-          if (retained.length < 4) sideDropped = true;
-          sides.set(user, retained);
-        }
-        if (sideDropped) {
-          droppedArcs++;
-          continue;
-        }
-
-        let worstHere = 0;
-        for (let i = 0; i < arc.users.length; i++) {
-          for (let j = i + 1; j < arc.users.length; j++) {
-            const d = hausdorff(
-              sides.get(arc.users[i] as number) as number[],
-              sides.get(arc.users[j] as number) as number[],
-            );
-            if (d > worstHere) worstHere = d;
-          }
-        }
-        if (worstHere > 0) {
-          displaced++;
-          const names = arc.users.map((u) => versionIds[u] as string);
-          const label =
-            names.length > 2
-              ? `${names.slice(0, 2).join(" | ")} +${names.length - 2}`
-              : names.join(" | ");
-          displacements.push({ distance: worstHere, label });
-        } else {
-          identical++;
-        }
-        if (worstHere > worstDisplacement) worstDisplacement = worstHere;
-      }
-
-      const onePixel = scale / PX_PER_UNIT[level];
-      // The three LARGEST, not the first three running maxima: an example list
-      // that understates its own scalar is worse than no example list.
-      const worst = [...displacements]
-        .sort((a, b) => b.distance - a.distance)
-        .slice(0, 3)
-        .map((d) => `${(d.distance / onePixel).toFixed(3)}px ${d.label}`);
+    for (const level of ["coarse", "mid"] as const) {
+      const { arcsConsidered, identical, droppedArcs, displacements } = measureDisplacement(
+        outDir,
+        level,
+      );
+      const displaced = displacements.length;
+      const p99 = percentile(displacements, 0.99);
 
       console.log(
         `  ${level}: ${arcsConsidered} shared arcs, ${identical} identical ` +
           `(${((identical / arcsConsidered) * 100).toFixed(1)}% of arcs), ` +
           `${droppedArcs} with a side dropping the arc, ${displaced} displaced, ` +
-          `worst displacement ${(worstDisplacement / onePixel).toFixed(3)} px ` +
-          `(${(worstDisplacement / scale).toFixed(6)} projected units)` +
-          `${worst.length ? ` -- ${worst.join("; ")}` : ""}`,
+          `p99 displacement ${(p99 / onePixelInProjectedUnits).toFixed(3)} px ` +
+          `(${p99.toFixed(6)} projected units)`,
       );
 
-      // Coarse meets the criterion as the spec states it.
-      // Mid exceeds it on 7 of 22,225 arcs, all the same world-space events
-      // (~0.0029 projected units, about 22 km). Mid's pixel is 8x smaller for
-      // an identical displacement, and PX_PER_UNIT is PROVISIONAL -- a guess at
-      // a viewport that does not exist yet. So mid is bounded in WORLD units,
-      // at the coarse level's pixel size, rather than pretended to pass.
-      if (level === "coarse") expect(worstDisplacement).toBeLessThan(onePixel);
-      else expect(worstDisplacement * (COORD_SCALE.coarse / scale)).toBeLessThan(coarsePixel);
+      expect(p99).toBeLessThan(onePixelInProjectedUnits);
       // A floor sized for the fixture's 620 arcs, not the real dataset's
       // 22,215: the point is that the population is not quietly empty.
       expect(arcsConsidered).toBeGreaterThan(500);

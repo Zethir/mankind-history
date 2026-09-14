@@ -1,4 +1,9 @@
-import type { LandArtifact, PolitiesArtifact, VersionsArtifact } from "@history/model";
+import type {
+  ChangesArtifact,
+  LandArtifact,
+  PolitiesArtifact,
+  VersionsArtifact,
+} from "@history/model";
 import { readArtifact } from "@history/model/artifact";
 import { describe, expect, it } from "vitest";
 import { validateArtifacts } from "../src/data/artifacts";
@@ -10,6 +15,7 @@ function load() {
     polities: readArtifact<PolitiesArtifact>(`${FIXTURES}/polities.json`),
     versions: readArtifact<VersionsArtifact>(`${FIXTURES}/versions.0.json`),
     land: readArtifact<LandArtifact>(`${FIXTURES}/land.0.json`),
+    changes: readArtifact<ChangesArtifact>(`${FIXTURES}/changes.json`),
   };
 }
 
@@ -31,5 +37,11 @@ describe("validateArtifacts", () => {
     const a = load();
     a.land.schemaVersion = 999;
     expect(() => validateArtifacts(a)).toThrow(/land\.0\.json/);
+  });
+
+  it("checks changes.json too", () => {
+    const a = load();
+    a.changes.schemaVersion = 999;
+    expect(() => validateArtifacts(a)).toThrow(/changes\.json/);
   });
 });

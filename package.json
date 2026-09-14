@@ -17,6 +17,8 @@
     "build": "NODE_OPTIONS=--max-old-space-size=8192 tsx packages/pipeline/src/cli.ts build",
     "extract-fixture": "tsx packages/pipeline/src/cli.ts extract-fixture",
     "histogram": "tsx packages/pipeline/src/cli.ts histogram",
+    "displacement": "tsx packages/pipeline/src/cli.ts displacement",
+    "spacing": "tsx packages/pipeline/src/cli.ts spacing",
     "fixture:bless": "rm -rf fixtures/dist && tsx packages/pipeline/src/cli.ts build --sources=fixtures --out=fixtures/dist"
   },
   "devDependencies": {

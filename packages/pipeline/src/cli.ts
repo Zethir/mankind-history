@@ -1,13 +1,15 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ChangesArtifact } from "@history/model";
+import { type ChangesArtifact, DISPLACEMENT_REFERENCE_SCALE, type LevelName } from "@history/model";
 import { readArtifact } from "@history/model/artifact";
 import { build, loadAliases, loadOverlaps } from "./build";
 import { fetchSource } from "./fetch/download";
 import { REGIONS, resolveEra, resolveRegion } from "./regions";
 import { SOURCES } from "./sources";
+import { type Level, measureDisplacement } from "./stages/displacement";
 import { selectFeatures } from "./stages/extract-fixture";
 import { analyse, type HistogramResult } from "./stages/histogram";
+import { measureSpacing, percentile } from "./stages/spacing";
 
 function flag(name: string): boolean {
   return process.argv.includes(`--${name}`);
@@ -244,6 +246,123 @@ function runHistogram(): void {
   }
 }
 
+/**
+ * Screen pixels per projected unit at fit-to-window, 1400x900 -- see
+ * docs/phase-2-milestone-2-design.md and decision 0020. Not a guess:
+ * `fitScale(1400, 900)` in `packages/viewer/src/render/transform.ts`, mirrored
+ * in `@history/model` as `DISPLACEMENT_REFERENCE_SCALE` so pipeline and
+ * viewer share the one figure the acceptance criterion is measured against.
+ */
+const FIT_TO_WINDOW_PX_PER_UNIT = DISPLACEMENT_REFERENCE_SCALE;
+
+/**
+ * Runs the border-displacement measurement and also enforces the acceptance
+ * criterion decision 0020 replaced: at `DISPLACEMENT_REFERENCE_SCALE`, each
+ * level's p99 displacement -- measured across the arcs that are actually
+ * displaced, not across every shared arc; `measureDisplacement` only pushes
+ * an arc onto `displacements` when its sides disagree, so the dropped arcs
+ * (a side losing the arc entirely -- see `DisplacementReport.droppedArcs`)
+ * are excluded from the statistic, not folded into it as zeros -- must stay
+ * under one screen pixel. `pnpm test` cannot check this -- the fixture's 620
+ * shared arcs are far too thin to characterise a percentile -- so the full
+ * build's CI workflow runs this command and treats a nonzero exit as a
+ * failed build.
+ *
+ * Floor on the shared-arc population a level must clear before its p99 is
+ * trusted. Without this, `percentile([], 0.99)` returns 0, and 0 is always
+ * "under one pixel" -- a build whose `versions.*` artifacts came out with
+ * empty geometry (or any regression that silently empties `buildArcs`'s
+ * co-user grouping: a coordinate-scale change, an emit change that stops
+ * sharing vertices) would pass this gate on nothing rather than fail loudly.
+ * The real dataset measures 22,215 shared arcs at both levels (decision
+ * 0020); 5,000 is roughly a fifth of that -- comfortably below ordinary
+ * dataset growth or shrinkage (Cliopatria has not halved between releases),
+ * comfortably above zero, and far above any count a broken-but-nonempty
+ * build would plausibly still produce by accident. `packages/pipeline/tests/
+ * acceptance.test.ts` guards the same failure mode against the fixture with
+ * its own, much smaller floor (500, against the fixture's 620 arcs) for the
+ * same reason: the point of either floor is that the population is not
+ * quietly empty, not that it matches a specific count.
+ */
+const MIN_ARCS_CONSIDERED = 5000;
+
+function runDisplacement(): void {
+  const distDir = option("dist", "dist");
+  const onePixelInUnits = 1 / DISPLACEMENT_REFERENCE_SCALE;
+  let failed = false;
+
+  for (const level of ["coarse", "mid"] as const satisfies readonly Level[]) {
+    const { arcsConsidered, identical, droppedArcs, displacements } = measureDisplacement(
+      distDir,
+      level,
+    );
+
+    if (arcsConsidered < MIN_ARCS_CONSIDERED) {
+      failed = true;
+      console.error(
+        `  ${level}: only ${arcsConsidered} shared arcs considered (need at least ` +
+          `${MIN_ARCS_CONSIDERED}) -- the shared-arc population looks empty or ` +
+          "collapsed, so its p99 cannot be trusted. Refusing to report a passing " +
+          "displacement figure measured against nothing.",
+      );
+      continue;
+    }
+
+    const displaced = displacements.length;
+    const max = displaced > 0 ? (displacements[displaced - 1] as number) : 0;
+    const p99 = percentile(displacements, 0.99);
+    const fmt = (units: number) =>
+      `${units.toFixed(6)} units / ${(units * FIT_TO_WINDOW_PX_PER_UNIT).toFixed(3)} px`;
+
+    console.log(`\n  ${level}: ${arcsConsidered} shared arcs`);
+    console.log(
+      `    identical ${identical} (${((identical / arcsConsidered) * 100).toFixed(1)}%), ` +
+        `dropped ${droppedArcs}, displaced ${displaced}`,
+    );
+    console.log(`    p50 ${fmt(percentile(displacements, 0.5))}`);
+    console.log(`    p90 ${fmt(percentile(displacements, 0.9))}`);
+    console.log(`    p95 ${fmt(percentile(displacements, 0.95))}`);
+    console.log(`    p99 ${fmt(p99)}`);
+    console.log(`    max ${fmt(max)}`);
+
+    if (p99 >= onePixelInUnits) {
+      failed = true;
+      console.error(
+        `  ${level}: p99 displacement ${(p99 * DISPLACEMENT_REFERENCE_SCALE).toFixed(3)} px ` +
+          `is at or over the one-pixel criterion at ${DISPLACEMENT_REFERENCE_SCALE} px/unit ` +
+          "(decision 0020).",
+      );
+    }
+  }
+  console.log("");
+
+  if (failed) {
+    console.error(
+      "Border-displacement acceptance criterion failed -- see " +
+        "docs/decisions/0020-percentile-displacement.md",
+    );
+    process.exit(1);
+  }
+}
+
+function runSpacing(): void {
+  const distDir = option("dist", "dist");
+
+  for (const level of ["coarse", "mid", "full"] as const satisfies readonly LevelName[]) {
+    const { ringsConsidered, spacings } = measureSpacing(distDir, level);
+    const max = spacings.length > 0 ? (spacings[spacings.length - 1] as number) : 0;
+    const fmt = (units: number) =>
+      `${units.toFixed(6)} units / ${(units * FIT_TO_WINDOW_PX_PER_UNIT).toFixed(3)} px`;
+
+    console.log(`\n  ${level}: ${ringsConsidered} rings, ${spacings.length} segments`);
+    console.log(`    p50 ${fmt(percentile(spacings, 0.5))}`);
+    console.log(`    p90 ${fmt(percentile(spacings, 0.9))}`);
+    console.log(`    p99 ${fmt(percentile(spacings, 0.99))}`);
+    console.log(`    max ${fmt(max)}`);
+  }
+  console.log("");
+}
+
 const command = process.argv[2];
 if (command === "fetch") {
   await runFetch();
@@ -253,9 +372,14 @@ if (command === "fetch") {
   runExtractFixture();
 } else if (command === "histogram") {
   runHistogram();
+} else if (command === "displacement") {
+  runDisplacement();
+} else if (command === "spacing") {
+  runSpacing();
 } else {
   console.error(
-    `Unknown command "${command ?? ""}". Known: fetch, build, extract-fixture, histogram`,
+    `Unknown command "${command ?? ""}". ` +
+      "Known: fetch, build, extract-fixture, histogram, displacement, spacing",
   );
   process.exit(1);
 }

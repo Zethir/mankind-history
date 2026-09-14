@@ -24,6 +24,15 @@ body {
   height: 100vh;
 }
 
+#plate {
+  cursor: grab;
+  touch-action: none;
+}
+
+#plate:active {
+  cursor: grabbing;
+}
+
 #chrome {
   position: fixed;
   inset: auto 0 0 0;
@@ -58,6 +67,12 @@ body {
 .modes-label {
   font-size: 11px;
   opacity: 0.65;
+}
+
+.level {
+  font-size: 11px;
+  opacity: 0.65;
+  white-space: nowrap;
 }
 
 button {

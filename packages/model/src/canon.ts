@@ -68,19 +68,29 @@ export const WORLD_HALF_HEIGHT = 1.31736;
 export const GRID = { cols: 64, rows: 32 } as const;
 
 /**
- * PROVISIONAL. Screen pixels per projected unit at the coarsest zoom each level
- * is expected to serve, consumed by the no-new-gaps acceptance criterion.
+ * Reference scale, in screen pixels per projected unit, at which the border-
+ * displacement acceptance criterion is measured (decision 0020). This is
+ * `fitScale(1400, 900)` in `packages/viewer/src/render/transform.ts` -- the
+ * real fit-to-window scale, not a guess.
  *
- * These encode a Phase 2 viewport assumption that does not exist yet: a
- * 1400-pixel-wide window showing the whole world at coarse, an eighth of it at
- * mid, and a sixty-fourth at full. The projected world is 5.4133 units wide.
- * Phase 2 should replace these with the viewer's real figures.
+ * Not consumed by the renderer, which reads `viewport.scale` continuously as
+ * the user zooms: `canon.ts` only fixes the one scale the test is measured
+ * at, so the constant and the criterion cannot silently drift apart. This
+ * must be stated here because a future reader will otherwise expect the
+ * renderer to consult it.
+ *
+ * This replaces the old three-entry `PX_PER_UNIT` (coarse 259, mid 2069, full
+ * 16552), which assumed levels switch at fixed zoom multiples of a 1400px
+ * window -- an eighth of the world at mid, a sixty-fourth at full. Milestone
+ * 2 measured that assumption and dropped it entirely (0020): levels are a
+ * load order, not a zoom mapping, so a per-level scale is meaningless. The
+ * old `full: 16552` was accidentally almost exact -- `fitScale(1400, 900) *
+ * MAX_ZOOM_FACTOR` (`packages/viewer/src/render/transform.ts`, factor 64) is
+ * 16551.9 -- but for a reason that no longer holds: it was the *maximum-zoom*
+ * scale, not any level's own scale, and 0020 argues explicitly against
+ * evaluating this criterion at maximum zoom at all.
  */
-export const PX_PER_UNIT = {
-  coarse: 259,
-  mid: 2069,
-  full: 16552,
-} as const;
+export const DISPLACEMENT_REFERENCE_SCALE = 258.6242;
 
 /**
  * Visvalingam vertex-retention percentage per level, passed to mapshaper.
@@ -101,8 +111,8 @@ export const PX_PER_UNIT = {
  * not its vertex count, that does most of the size reduction from full's
  * 1e9. `coarse` is 30: the least aggressive value in the brief's tested
  * candidate range [1, 2, 5, 10, 20, 30], giving real simplification
- * appropriate for a global zoomed-out view (see PX_PER_UNIT.coarse) while
- * leaving 62% headroom under the ceiling for future dataset growth. `mid` is
+ * appropriate for a global zoomed-out view while leaving 62% headroom under
+ * the ceiling for future dataset growth. `mid` is
  * 60: of the values measured, the one closest to the vertex count midway
  * between coarse and full (2,834,596 against a target of 2,911,520).
  *

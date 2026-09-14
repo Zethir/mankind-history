@@ -1,5 +1,6 @@
 import {
   type ChangesArtifact,
+  cellRangeFor,
   GRID,
   type Polygon,
   SCHEMA_VERSION,
@@ -33,37 +34,6 @@ export function polygonBbox(polygon: Polygon): [number, number, number, number] 
     }
   }
   return [minX, minY, maxX, maxY];
-}
-
-function clamp(v: number, lo: number, hi: number): number {
-  return v < lo ? lo : v > hi ? hi : v;
-}
-
-/**
- * Inclusive cell range covering an unscaled-projected bbox, against a grid
- * passed in rather than against the module constants.
- *
- * Every query takes its grid from the artifact it is querying. `changes.json`
- * carries `grid` precisely so a consumer can use the file standalone, and a
- * released artifact keeps the grid it was built with: reading the shape from
- * `GRID` while indexing `cells` by the artifact's own `cols` would silently
- * read the wrong cells the moment the constant is changed, here or in a Phase 2
- * viewer querying a previously released file. Only `buildChangeIndex` uses the
- * constants, because there the artifact does not exist yet.
- */
-export function cellRangeFor(
-  grid: ChangesArtifact["grid"],
-  bbox: [number, number, number, number],
-) {
-  const [minX, minY, maxX, maxY] = grid.bounds;
-  const w = maxX - minX;
-  const h = maxY - minY;
-  return {
-    x0: clamp(Math.floor(((bbox[0] - minX) / w) * grid.cols), 0, grid.cols - 1),
-    x1: clamp(Math.floor(((bbox[2] - minX) / w) * grid.cols), 0, grid.cols - 1),
-    y0: clamp(Math.floor(((bbox[1] - minY) / h) * grid.rows), 0, grid.rows - 1),
-    y1: clamp(Math.floor(((bbox[3] - minY) / h) * grid.rows), 0, grid.rows - 1),
-  };
 }
 
 /** The grid the build writes into the artifact, for the one caller that predates it. */
@@ -107,7 +77,11 @@ export function buildChangeIndex(
         for (let x = x0; x <= x1; x++) {
           const cell = cells[y * GRID.cols + x] as Set<number>;
           cell.add(version.fromYear);
-          cell.add(version.toYear);
+          // A fade-out begins the year AFTER the claim ends, so toYear + 1 is
+          // the moment the view changes. Bucketing toYear records a year
+          // nothing happens at, and makes a transition look like two events
+          // a year apart.
+          cell.add(version.toYear + 1);
         }
       }
     }
@@ -180,7 +154,7 @@ export function nextChangeBruteForce(
       }
     }
     if (!overlaps) continue;
-    for (const candidate of [version.fromYear, version.toYear]) {
+    for (const candidate of [version.fromYear, version.toYear + 1]) {
       if (candidate > year && (best === null || candidate < best)) best = candidate;
     }
   }
